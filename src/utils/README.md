@@ -1,0 +1,3 @@
+# Utils
+Thư mục này chứa các hàm tiện ích có thể dùng chung trong toàn bộ dự án.
+Ví dụ: Hàm định dạng tiền tệ, hàm xử lý chuỗi, cấu hình Cloudinary để lưu ảnh...

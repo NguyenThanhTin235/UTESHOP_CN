@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTEShop - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --text-dark: #1f2937;
+            --text-muted: #6b7280;
+            --bg-color: #f9fafb;
+            --white: #ffffff;
+            --border-color: #e5e7eb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-dark);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        a {
+            text-decoration: none;
+            color: var(--text-dark);
+        }
+
+        /* --- HEADER --- */
+        header {
+            background-color: var(--white);
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border: 2px solid var(--primary-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon i {
+            font-size: 14px;
+        }
+
+        /* --- MAIN CONTENT --- */
+        main {
+            flex: 1;
+            display: flex;
+            max-width: 1200px;
+            margin: 40px auto;
+            width: 100%;
+            background-color: var(--white);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+
+        /* Left Side: Image & Glass Card */
+        .image-section {
+            flex: 1;
+            position: relative;
+            background: url('https://images.unsplash.com/photo-1441984904996-e0b6ed29ae27?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80') center/cover no-repeat;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px;
+            color: var(--white);
+        }
+
+        .image-section::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.5) 100%);
+        }
+
+        .image-top, .glass-card {
+            position: relative;
+            z-index: 1;
+        }
+
+        .image-top {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .image-top h2 {
+            font-size: 28px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .image-top p {
+            font-size: 14px;
+            margin-top: 10px;
+            opacity: 0.9;
+            letter-spacing: 1px;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .glass-card p {
+            font-size: 22px;
+            font-style: italic;
+            font-weight: 500;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .author {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .author img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .author-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .author-info span {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        /* Right Side: Login Form */
+        .form-section {
+            flex: 1;
+            padding: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background-color: var(--white);
+        }
+
+        .form-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .form-header h1 {
+            font-size: 32px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 10px;
+        }
+
+        .form-header p {
+            color: var(--text-muted);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #374151;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+
+        .input-wrapper i.left-icon {
+            left: 15px;
+        }
+
+        .input-wrapper i.right-icon {
+            right: 15px;
+            cursor: pointer;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 40px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary-color);
+        }
+
+        .form-options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+        }
+
+        .forgot-link {
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--primary-color);
+            color: var(--white);
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 30px 0;
+            color: #9ca3af;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .divider::before { margin-right: 15px; }
+        .divider::after { margin-left: 15px; }
+
+        .social-login {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn-social {
+            flex: 1;
+            padding: 12px;
+            background-color: var(--white);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-social:hover {
+            background-color: #f3f4f6;
+        }
+
+        .signup-prompt {
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .signup-prompt a {
+            color: #dc2626; /* Red color matching design */
+            font-weight: 600;
+        }
+
+        /* --- FOOTER --- */
+        footer {
+            background-color: var(--white);
+            border-top: 1px solid var(--border-color);
+            padding: 60px 40px 20px;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+
+        .footer-brand {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .footer-brand p {
+            margin-top: 15px;
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 80px;
+        }
+
+        .link-column h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .link-column ul {
+            list-style: none;
+        }
+
+        .link-column ul li {
+            margin-bottom: 12px;
+        }
+
+        .link-column ul li a {
+            color: var(--text-muted);
+            font-size: 14px;
+            transition: color 0.3s ease;
+        }
+
+        .link-column ul li a:hover {
+            color: var(--text-dark);
+        }
+
+        .footer-social h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .social-icons {
+            display: flex;
+            gap: 15px;
+        }
+
+        .social-icons a {
+            color: var(--text-dark);
+            font-size: 18px;
+        }
+
+        .footer-bottom {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            color: #9ca3af;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 900px) {
+            main {
+                flex-direction: column;
+                margin: 20px;
+                width: auto;
+            }
+            .image-section {
+                padding: 60px 20px;
+            }
+            .form-section {
+                padding: 40px 20px;
+            }
+            .footer-links {
+                gap: 40px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .footer-content {
+                flex-direction: column;
+            }
+            .footer-links {
+                flex-direction: column;
+                gap: 30px;
+            }
+            .footer-bottom {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon"><i class="fa-solid fa-diamond"></i></div>
+            UTEShop
+        </div>
+    </header>
+
+    <main>
+        <div class="image-section">
+            <div class="image-top">
+                <h2>
+                    <div class="logo-icon" style="border-color: white;"><i class="fa-solid fa-diamond"></i></div>
+                    UTEShop
+                </h2>
+                <p>Multi-vendor Fashion Marketplace</p>
+                <div style="width: 150px; height: 1px; background: white; margin: 20px auto; opacity: 0.5;"></div>
+            </div>
+
+            <div class="glass-card">
+                <p>"Redefining modern elegance through a curated collective of global fashion visionaries."</p>
+                <div class="author">
+                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt="Elena Rossi">
+                    <div class="author-info">
+                        <h4>Elena Rossi</h4>
+                        <span>Head of Curation</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="form-header">
+                <h1>Welcome back</h1>
+                <p>Login to continue shopping</p>
+            </div>
+
+            <form action="#" method="POST">
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <div class="input-wrapper">
+                        <i class="fa-regular fa-envelope left-icon"></i>
+                        <input type="email" class="form-control" placeholder="name@example.com" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock left-icon"></i>
+                        <input type="password" class="form-control" placeholder="Enter your password" required>
+                        <i class="fa-regular fa-eye right-icon"></i>
+                    </div>
+                </div>
+
+                <div class="form-options">
+                    <label class="checkbox-group">
+                        <input type="checkbox"> Remember me
+                    </label>
+                    <a href="#" class="forgot-link">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="btn-primary">Login</button>
+
+                <div class="divider">OR CONTINUE WITH</div>
+
+                <div class="social-login">
+                    <button type="button" class="btn-social">
+                        <i class="fa-brands fa-google"></i> Google
+                    </button>
+                    <button type="button" class="btn-social">
+                        <i class="fa-brands fa-facebook-f"></i> Facebook
+                    </button>
+                </div>
+
+                <div class="signup-prompt">
+                    Don't have an account? <a href="#">Sign up</a>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-brand">
+                <div class="logo-container">
+                    <div class="logo-icon"><i class="fa-solid fa-diamond"></i></div>
+                    UTEShop
+                </div>
+                <p>Elevating the multi-vendor experience with<br>academic precision and soft aesthetics.</p>
+            </div>
+
+            <div class="footer-links">
+                <div class="link-column">
+                    <h4>Explore</h4>
+                    <ul>
+                        <li><a href="#">New Arrivals</a></li>
+                        <li><a href="#">Featured Designers</a></li>
+                        <li><a href="#">Boutiques</a></li>
+                    </ul>
+                </div>
+                <div class="link-column">
+                    <h4>Company</h4>
+                    <ul>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Careers</a></li>
+                        <li><a href="#">Terms of Service</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-social">
+                <h4>Connect</h4>
+                <div class="social-icons">
+                    <a href="#"><i class="fa-brands fa-twitter"></i></a>
+                    <a href="#"><i class="fa-brands fa-instagram"></i></a>
+                    <a href="#"><i class="fa-brands fa-github"></i></a>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div>© 2024 UTESHOP. ALL RIGHTS RESERVED.</div>
+            <div>ACADEMIC MODERNISM FRAMEWORK V1.0</div>
+        </div>
+    </footer>
+
+</body>
+</html>
