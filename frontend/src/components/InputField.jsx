@@ -10,31 +10,38 @@ const InputField = ({ label, type, name, value, onChange, placeholder, icon, req
   const inputType = type === 'password' && showPassword ? 'text' : type;
 
   return (
-    <div className="mb-3 text-start">
-      {label && <label className="form-label fw-semibold text-secondary small mb-1 text-start d-block">{label}</label>}
-      <div className="input-group">
+    <div className="mb-4 text-left w-full">
+      {label && (
+        <label className="block text-[11px] font-bold text-[#505f76] uppercase tracking-wider mb-2">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      <div className="relative flex items-center group">
         {icon && (
-          <span className="input-group-text bg-white border-end-0 text-muted">
+          <span className="absolute left-4 text-[#737686] group-focus-within:text-[#004ac6] transition-colors flex items-center pointer-events-none">
             <i className={icon}></i>
           </span>
         )}
         <input
           type={inputType}
           name={name}
-          className={`form-control ${icon ? 'border-start-0' : ''} ${type === 'password' ? 'border-end-0' : ''} ${error ? 'is-invalid' : ''}`}
+          className={`w-full bg-[#f2f3ff] border ${error ? 'border-red-500 focus:ring-red-500/20' : 'border-[#c3c6d7] focus:border-[#004ac6] focus:ring-[#004ac6]/20'} rounded-xl py-3.5 ${icon ? 'pl-11' : 'pl-4'} ${type === 'password' ? 'pr-12' : 'pr-4'} text-sm text-[#131b2e] placeholder-[#737686] outline-none focus:ring-2 transition-all`}
           placeholder={placeholder}
           value={value}
           onChange={onChange}
           required={required}
-          style={{ padding: '10px 12px', fontSize: '14px' }}
         />
         {type === 'password' && (
-          <span className="input-group-text bg-white border-start-0 text-muted" style={{ cursor: 'pointer' }} onClick={togglePassword}>
+          <button
+            type="button"
+            className="absolute right-4 text-[#737686] hover:text-[#004ac6] transition-colors flex items-center justify-center h-full"
+            onClick={togglePassword}
+          >
             <i className={showPassword ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"}></i>
-          </span>
+          </button>
         )}
-        {error && <div className="invalid-feedback">{error}</div>}
       </div>
+      {error && <p className="mt-1 text-xs text-red-500 font-medium">{error}</p>}
     </div>
   );
 };

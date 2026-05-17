@@ -1,48 +1,28 @@
 const mongoose = require('mongoose');
 
-const orderItemSchema = new mongoose.Schema({
-  product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  variant_id: { type: mongoose.Schema.Types.ObjectId }, // ID của variant cụ thể
-  quantity: { type: Number, required: true, min: 1 },
-  price_at_buy: { type: Number, required: true } // Lưu giá tại thời điểm mua để tránh thay đổi sau này
-});
-
-const statusHistorySchema = new mongoose.Schema({
-  status: { type: String, required: true },
-  note: { type: String },
-  updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  created_at: { type: Date, default: Date.now }
-});
-
 const orderSchema = new mongoose.Schema({
   order_code: { type: String, required: true, unique: true },
-  customer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  shipper: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  assigned_at: { type: Date },
-  coupon: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon' },
-  status: { 
-    type: String, 
-    enum: ['pending', 'confirmed', 'shipping', 'completed', 'cancelled', 'refunded'],
-    default: 'pending' 
+  payment_order_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentOrder', required: true },
+  customer_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  shop_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
+  status: {
+    type: String,
+    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'canceled', 'disputed', 'refunded'],
+    default: 'pending'
   },
-  total_base: { type: Number, required: true },
+  subtotal_amount: { type: Number, required: true },
   shipping_fee: { type: Number, default: 0 },
-  discount_total: { type: Number, default: 0 },
+  coupon_discount: { type: Number, default: 0 },
+  coin_discount: { type: Number, default: 0 },
+  platform_fee_rate: { type: Number },
+  platform_fee_amount: { type: Number },
   total_final: { type: Number, required: true },
-  payment_status: { 
-    type: String, 
-    enum: ['pending', 'paid', 'failed', 'refunded'], 
-    default: 'pending' 
+  payment_status: {
+    type: String,
+    enum: ['pending', 'success', 'failed'],
+    default: 'pending'
   },
-  coin_spent: { type: Number, default: 0 },
-  coin_earned: { type: Number, default: 0 },
-  items: [orderItemSchema],
-  history: [statusHistorySchema],
-  cancellation: {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    reason: { type: String },
-    cancelled_at: { type: Date }
-  }
+  coin_earned: { type: Number, default: 0 }
 }, {
   timestamps: true
 });

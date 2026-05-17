@@ -1,54 +1,44 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
   return (
-    <footer className="bg-white border-top py-5 px-4 mt-auto">
-      <div className="container-xl">
-        <div className="row g-4 mb-5">
-          <div className="col-lg-4">
-            <div className="logo-container d-flex align-items-center gap-2 mb-3" style={{ fontSize: '24px', fontWeight: '700', color: '#2563eb' }}>
-              <div className="logo-icon border border-2 border-primary rounded-circle d-flex align-items-center justify-content-center" style={{ width: '32px', height: '32px' }}>
-                <i className="fa-solid fa-diamond" style={{ fontSize: '14px' }}></i>
-              </div>
-              UTEShop
-            </div>
-            <p className="text-muted fst-italic small">
-              Elevating the multi-vendor experience with<br />academic precision and soft aesthetics.
-            </p>
-          </div>
-          
-          <div className="col-6 col-md-3 col-lg-2 ms-lg-auto">
-            <h6 className="fw-bold mb-3">Explore</h6>
-            <ul className="list-unstyled small text-muted">
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">New Arrivals</a></li>
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">Featured Designers</a></li>
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">Boutiques</a></li>
+    <footer className="bg-[#f7f9ff] border-t border-[#c3c6d7] mt-24 font-['Manrope']">
+      <div className="w-full py-12 px-4 md:px-10 mt-auto flex flex-col md:flex-row justify-between items-start max-w-[1280px] mx-auto gap-12">
+        <div className="max-w-xs space-y-6">
+          <Link to="/" className="font-['Manrope'] text-2xl text-[#004ac6] tracking-tight font-extrabold block">UTEShop</Link>
+          <p className="text-sm text-[#434655] leading-relaxed">Elevating the multi-vendor experience with academic precision and soft aesthetics.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-12 flex-grow">
+          <div className="space-y-4">
+            <h4 className="font-bold text-sm uppercase tracking-wider">Explore</h4>
+            <ul className="space-y-3 text-sm text-[#434655]">
+              <li><Link className="hover:text-[#004ac6] transition-all" to="/search">New Arrivals</Link></li>
+              <li><Link className="hover:text-[#004ac6] transition-all" to="/search">Featured Designers</Link></li>
+              <li><Link className="hover:text-[#004ac6] transition-all" to="/support">Help Center</Link></li>
             </ul>
           </div>
-
-          <div className="col-6 col-md-3 col-lg-2">
-            <h6 className="fw-bold mb-3">Company</h6>
-            <ul className="list-unstyled small text-muted">
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">About Us</a></li>
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">Careers</a></li>
-              <li className="mb-2"><a href="#" className="text-decoration-none text-muted">Terms of Service</a></li>
+          <div className="space-y-4">
+            <h4 className="font-bold text-sm uppercase tracking-wider">Company</h4>
+            <ul className="space-y-3 text-sm text-[#434655]">
+              <li><Link className="hover:text-[#004ac6] transition-all" to="#">About Us</Link></li>
+              <li><Link className="hover:text-[#004ac6] transition-all" to="#">Careers</Link></li>
+              <li><Link className="hover:text-[#004ac6] transition-all" to="#">Terms of Service</Link></li>
             </ul>
           </div>
-
-          <div className="col-md-3 col-lg-2">
-            <h6 className="fw-bold mb-3">Connect</h6>
-            <div className="d-flex gap-3 fs-5">
-              <a href="#" className="text-dark"><i className="fa-brands fa-twitter"></i></a>
-              <a href="#" className="text-dark"><i className="fa-brands fa-instagram"></i></a>
-              <a href="#" className="text-dark"><i className="fa-brands fa-github"></i></a>
+          <div className="col-span-2 md:col-span-1 space-y-4">
+            <h4 className="font-bold text-sm uppercase tracking-wider">Connect</h4>
+            <div className="flex gap-4">
+              <a className="w-10 h-10 flex items-center justify-center rounded-full bg-[#e1e4f5] text-[#434655] hover:bg-[#004ac6] hover:text-white transition-all shadow-sm" href="#"><span className="material-symbols-outlined text-[20px]">language</span></a>
+              <a className="w-10 h-10 flex items-center justify-center rounded-full bg-[#e1e4f5] text-[#434655] hover:bg-[#004ac6] hover:text-white transition-all shadow-sm" href="#"><span className="material-symbols-outlined text-[20px]">alternate_email</span></a>
+              <a className="w-10 h-10 flex items-center justify-center rounded-full bg-[#e1e4f5] text-[#434655] hover:bg-[#004ac6] hover:text-white transition-all shadow-sm" href="#"><span className="material-symbols-outlined text-[20px]">share</span></a>
             </div>
           </div>
         </div>
-
-        <div className="border-top pt-4 d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 text-muted" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>
-          <div>© 2024 UTESHOP. ALL RIGHTS RESERVED.</div>
-          <div>ACADEMIC MODERNISM FRAMEWORK V1.0</div>
-        </div>
+      </div>
+      <div className="w-full px-4 md:px-10 py-6 border-t border-[#c3c6d7] max-w-[1280px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+        <p className="text-sm text-[#434655]">© 2024 UTEShop Marketplace.</p>
+        <p className="font-bold opacity-30 uppercase tracking-widest text-[10px]">Academic Modernism Framework v1.0</p>
       </div>
     </footer>
   );

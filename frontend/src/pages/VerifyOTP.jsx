@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { registerUser, sendOTP, reset } from '../redux/authSlice';
-import PrimaryButton from '../components/PrimaryButton';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
@@ -119,70 +118,80 @@ const VerifyOTP = () => {
 
   return (
     <Layout>
-      <div className="bg-white shadow-sm border rounded-4 p-4 p-md-5 mb-4 text-center" style={{ width: '100%', maxWidth: '480px' }}>
-        <div className="mx-auto mb-4 d-flex align-items-center justify-content-center rounded-circle" 
-             style={{ width: '64px', height: '64px', backgroundColor: '#eff6ff', color: '#2563eb' }}>
-          <i className="fa-solid fa-shield-halved fs-3"></i>
+      <div className="w-full my-auto py-8 flex items-center justify-center">
+        <div className="max-w-[480px] w-full">
+          {/* Verification Card */}
+          <div className="bg-white rounded-[24px] p-8 md:p-12 shadow-[0px_4px_20px_rgba(15,23,42,0.05)] border border-[#c3c6d7]/30 text-center">
+            {/* Illustration/Icon */}
+            <div className="mb-8 flex justify-center">
+              <div className="w-16 h-16 bg-[#004ac6]/10 rounded-full flex items-center justify-center">
+                <span className="material-symbols-outlined text-[32px] text-[#004ac6]">verified_user</span>
+              </div>
+            </div>
+            
+            <h1 className="text-3xl font-bold text-[#131b2e] mb-2">OTP Verification</h1>
+            <p className="text-sm text-[#434655] mb-8 leading-relaxed">
+              Please enter the 6-digit code sent to your email <span className="font-bold text-[#131b2e]">{regData?.email}</span> to complete the security process.
+            </p>
+
+            {/* OTP Input Cluster */}
+            <form onSubmit={onSubmit} className="space-y-8">
+              <div className="flex justify-between gap-2 mb-8">
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={inputRefs[index]}
+                    type="text"
+                    className="w-12 h-14 md:w-14 md:h-16 text-center font-bold text-xl md:text-2xl border border-[#c3c6d7] rounded-xl bg-white focus:border-[#004ac6] focus:ring-2 focus:ring-[#004ac6]/20 outline-none transition-all text-[#131b2e]"
+                    value={digit}
+                    maxLength={1}
+                    onChange={(e) => handleChange(index, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(index, e)}
+                  />
+                ))}
+              </div>
+
+              <button 
+                className="w-full bg-[#004ac6] text-white font-bold text-lg py-4 rounded-xl shadow-sm hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2" 
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white"></div>
+                ) : (
+                  "Verify Code"
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 pt-8 border-t border-[#c3c6d7]/50">
+              <p className="text-sm text-[#434655] mb-2">Didn't receive the code?</p>
+              <div className="flex items-center justify-center gap-2">
+                <button 
+                  type="button" 
+                  onClick={onResendOTP} 
+                  disabled={!canResend}
+                  className={`font-bold transition-all ${canResend ? 'text-[#004ac6] hover:underline cursor-pointer' : 'text-[#737686] cursor-not-allowed'}`}
+                >
+                  Resend Code
+                </button>
+                <span className="text-[#434655] opacity-60">•</span>
+                <span className="text-[#434655] font-medium text-xs">{formatTime(timer)}s</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Back Link */}
+          <div className="mt-8 text-center">
+            <button 
+              onClick={() => navigate('/login')} 
+              className="inline-flex items-center gap-2 text-[#434655] hover:text-[#004ac6] transition-colors text-xs font-medium"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+              Back to Login
+            </button>
+          </div>
         </div>
-        
-        <h1 className="fw-bold h3 mb-2">Verify Identity</h1>
-        <p className="text-muted small mb-4">
-          We've sent a 6-digit verification code to<br />
-          <strong className="text-dark">{regData?.email}</strong>
-        </p>
-
-        <form onSubmit={onSubmit}>
-          <div className="d-flex justify-content-between gap-2 mb-4">
-            {otp.map((digit, index) => (
-              <input
-                key={index}
-                ref={inputRefs[index]}
-                type="text"
-                className={`form-control text-center fw-bold fs-4 ${digit ? 'border-primary' : ''}`}
-                style={{ width: '50px', height: '60px', color: '#2563eb' }}
-                value={digit}
-                maxLength={1}
-                onChange={(e) => handleChange(index, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(index, e)}
-              />
-            ))}
-          </div>
-
-          <div className="timer-info small text-muted mb-2 d-flex align-items-center justify-content-center gap-2">
-            <i className="fa-regular fa-clock"></i>
-            Resend code in <span className="text-primary fw-bold">{formatTime(timer)}</span>
-          </div>
-
-          <button 
-            type="button"
-            className={`btn btn-link p-0 small fw-bold mb-4 text-decoration-none ${canResend ? 'text-primary' : 'text-muted'}`}
-            disabled={!canResend}
-            onClick={onResendOTP}
-            style={{ cursor: canResend ? 'pointer' : 'not-allowed' }}
-          >
-            <i className="fa-solid fa-arrow-rotate-right me-2"></i>
-            Resend OTP
-          </button>
-
-          <PrimaryButton type="submit" isLoading={isLoading} className="py-3 rounded-3 mb-4 shadow-sm">
-            Verify & Continue
-          </PrimaryButton>
-        </form>
-
-        <div className="border-top w-75 mx-auto mb-4"></div>
-
-        <button onClick={() => navigate('/register')} className="btn btn-link text-muted small text-decoration-none mb-4 fw-medium">
-          <i className="fa-solid fa-arrow-left me-2"></i> Back to registration
-        </button>
-
-        <p className="small text-muted fst-italic px-4">
-          Didn't receive the email? Check your spam folder or try another address.
-        </p>
-      </div>
-
-      <div className="d-flex gap-4 text-muted small fw-bold mb-4" style={{ letterSpacing: '0.5px' }}>
-        <span><i className="fa-regular fa-circle-check me-1"></i> SECURE SSL</span>
-        <span><i className="fa-regular fa-circle-check me-1"></i> ACADEMIC GRADE</span>
       </div>
     </Layout>
   );

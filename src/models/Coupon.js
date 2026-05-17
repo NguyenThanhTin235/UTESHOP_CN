@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const couponSchema = new mongoose.Schema({
-  campaign: { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign' },
+  campaign_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign' },
   code: { type: String, required: true, unique: true },
   type: { type: String, enum: ['percent', 'fixed_amount'], required: true },
   value: { type: Number, required: true },

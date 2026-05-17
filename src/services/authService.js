@@ -127,15 +127,15 @@ const authenticate = async (email, password) => {
   const userObj = user.toObject();
   const userData = {
     id: userObj._id,
-    fullName: userObj.full_name,
+    full_name: userObj.full_name,
     email: userObj.email,
     phone: userObj.phone || null,
+    dob: userObj.dob || null,
+    gender: userObj.gender || null,
     role: userObj.role,
-    studentId: userObj.student_id || null,
-    faculty: userObj.faculty || null,
-    avatarUrl: userObj.avatar_url || null,
+    avatar_url: userObj.avatar_url || null,
     status: userObj.status,
-    coinBalance: userObj.coin_balance,
+    coin_balance: userObj.coin_balance,
     createdAt: userObj.createdAt,
     updatedAt: userObj.updatedAt
   };
@@ -258,6 +258,56 @@ const registerUser = async (userData) => {
   return { user, token };
 };
 
+/**
+ * Social Authenticate (Google/Facebook)
+ */
+const socialAuthenticate = async (userData) => {
+  const { email, full_name, avatar_url, provider, provider_id } = userData;
+
+  let user = await User.findOne({ email });
+
+  if (user) {
+    // Update avatar if the user doesn't have one yet
+    if (!user.avatar_url && avatar_url) {
+      user.avatar_url = avatar_url;
+      await user.save();
+    }
+  } else {
+    // Create new user
+    user = await User.create({
+      full_name,
+      email,
+      password: await hashPassword(Math.random().toString(36).slice(-10)), // Random password
+      avatar_url,
+      role: 'customer',
+      status: 'active',
+      email_verified_at: new Date(),
+    });
+  }
+
+  const token = jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE || '7d' }
+  );
+
+  const userObj = user.toObject();
+  const returnUserData = {
+    id: userObj._id,
+    full_name: userObj.full_name,
+    email: userObj.email,
+    avatar_url: userObj.avatar_url,
+    phone: userObj.phone || null,
+    dob: userObj.dob || null,
+    gender: userObj.gender || null,
+    role: userObj.role,
+    status: userObj.status,
+    createdAt: userObj.createdAt,
+  };
+
+  return { token, user: returnUserData };
+};
+
 module.exports = {
   generateOTP,
   hashPassword,
@@ -265,5 +315,6 @@ module.exports = {
   sendOTPEmail,
   authenticate,
   sendRegistrationOTP,
-  registerUser
+  registerUser,
+  socialAuthenticate
 };
