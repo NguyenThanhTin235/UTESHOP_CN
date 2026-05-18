@@ -32,7 +32,16 @@ const Login = () => {
     if (isSuccess && user) {
       toast.dismiss();
       toast.success('Login successful!');
-      navigate('/');
+      // Role-based redirect: customer → /, admin → /admin/, manager → /manager/, seller/vendor → /seller/
+      if (user.role === 'admin') {
+        window.location.href = '/admin/';
+      } else if (user.role === 'manager') {
+        window.location.href = '/manager/';
+      } else if (user.role === 'seller' || user.role === 'vendor') {
+        window.location.href = '/seller/';
+      } else {
+        navigate('/');
+      }
       dispatch(reset());
     }
   }, [user, isError, isSuccess, message, navigate, dispatch]);

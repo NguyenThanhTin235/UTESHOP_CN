@@ -16,8 +16,11 @@ const ProductDetail = () => {
   const [selectedImage, setSelectedImage] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(null);
+  const [selectedColor, setSelectedColor] = useState('');
+  const [selectedSize, setSelectedSize] = useState('');
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     const fetchProduct = async () => {
       try {
         const response = await axios.get(`http://localhost:5000/api/public/product/${slug}`);
@@ -25,6 +28,14 @@ const ProductDetail = () => {
           setData(response.data.data);
           if (response.data.data.media?.length > 0) {
             setSelectedImage(response.data.data.media[0].mediaUrl);
+          }
+          if (response.data.data.variants?.length > 0) {
+            const firstVar = response.data.data.variants[0];
+            setSelectedVariant(firstVar);
+            if (firstVar.attributes) {
+              setSelectedColor(firstVar.attributes.color || '');
+              setSelectedSize(firstVar.attributes.size || '');
+            }
           }
         }
       } catch (error) {
@@ -37,6 +48,19 @@ const ProductDetail = () => {
     fetchProduct();
   }, [slug, navigate]);
 
+  // Update selectedVariant when selectedColor or selectedSize changes
+  useEffect(() => {
+    if (data?.variants?.length > 0 && selectedColor && selectedSize) {
+      const found = data.variants.find(v => v.attributes?.color === selectedColor && v.attributes?.size === selectedSize);
+      if (found) {
+        setSelectedVariant(found);
+        if (quantity > (found.stockQuantity || 0)) setQuantity(found.stockQuantity || 1);
+      } else {
+        setSelectedVariant(null);
+      }
+    }
+  }, [selectedColor, selectedSize, data, quantity]);
+
   if (loading) {
     return <div className="min-h-screen bg-background text-on-background flex items-center justify-center font-['Manrope'] font-bold text-lg">Loading Academic Collection...</div>;
   }
@@ -45,8 +69,15 @@ const ProductDetail = () => {
 
   const { product, shop, category, media, variants, stock, sold, reviews, relatedProducts } = data;
 
+  const availableColors = Array.from(new Set(variants?.map(v => v.attributes?.color).filter(Boolean)));
+  const availableSizes = Array.from(new Set(variants?.map(v => v.attributes?.size).filter(Boolean)));
+
+  const currentSellingPrice = product.sellingPrice + (selectedVariant?.additionalPrice || 0);
+  const currentMrpPrice = product.mrpPrice + (selectedVariant?.additionalPrice || 0);
+  const currentStock = selectedVariant ? selectedVariant.stockQuantity : stock;
+
   const handleQuantityChange = (type) => {
-    if (type === 'inc' && quantity < stock) setQuantity(q => q + 1);
+    if (type === 'inc' && quantity < currentStock) setQuantity(q => q + 1);
     if (type === 'dec' && quantity > 1) setQuantity(q => q - 1);
   };
 
@@ -64,7 +95,7 @@ const ProductDetail = () => {
           <span className="material-symbols-outlined text-[16px]">chevron_right</span>
           {category?.breadcrumbs?.map((bc, i) => (
              <React.Fragment key={i}>
-                <Link to={`/category/${bc.slug}`} className="hover:text-primary">{bc.name}</Link>
+                <Link to={`/search?category=${bc.slug}`} className="hover:text-primary">{bc.name}</Link>
                 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
              </React.Fragment>
           ))}
@@ -77,7 +108,7 @@ const ProductDetail = () => {
             <div className="relative aspect-square bg-surface-container-lowest rounded-3xl overflow-hidden border border-outline-variant/30 group">
               <img src={selectedImage || product?.imageUrl || 'https://via.placeholder.com/600?text=No+Image+Available'} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 hover:scale-110 cursor-zoom-in" />
               <div className="absolute top-6 left-6 flex flex-col gap-2">
-                {stock > 0 ? (
+                {currentStock > 0 ? (
                    <span className="bg-primary text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest">In Stock</span>
                 ) : (
                    <span className="bg-error text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest">Out of Stock</span>
@@ -103,7 +134,7 @@ const ProductDetail = () => {
             <div className="space-y-2">
               <p className="text-[12px] text-primary font-bold tracking-widest uppercase">{shop?.name || 'UTEShop Official Store'}</p>
               <h1 className="text-3xl font-extrabold text-on-surface leading-tight">{product.name}</h1>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-1 text-secondary">
                   <span className="material-symbols-outlined text-[18px] text-amber-500" style={{fontVariationSettings: "'FILL' 1"}}>star</span>
                   <span className="font-bold">{product.averageRating || 'No ratings'}</span>
@@ -112,17 +143,22 @@ const ProductDetail = () => {
                 <span className="text-sm text-on-surface-variant underline cursor-pointer">{reviews?.length || 0} Reviews</span>
                 <span className="text-outline-variant">|</span>
                 <span className="text-sm text-on-surface-variant">{sold || 0} Sold</span>
+                <span className="text-outline-variant">|</span>
+                <div className="flex items-center gap-1 text-sm text-on-surface-variant" title="Total Views">
+                  <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                  <span>{product.viewCount || 0} Views</span>
+                </div>
               </div>
             </div>
 
             <div className="bg-surface-container-low p-6 rounded-2xl space-y-3">
               <div className="flex items-baseline flex-wrap gap-x-4 gap-y-2">
-                <p className="text-4xl text-primary font-extrabold">{product.sellingPrice?.toLocaleString()}₫</p>
-                {product.mrpPrice > product.sellingPrice ? (
+                <p className="text-4xl text-primary font-extrabold">{currentSellingPrice?.toLocaleString()}₫</p>
+                {currentMrpPrice > currentSellingPrice ? (
                   <div className="flex items-center gap-3">
-                    <p className="text-sm text-on-surface-variant line-through">{product.mrpPrice?.toLocaleString()}₫</p>
+                    <p className="text-sm text-on-surface-variant line-through">{currentMrpPrice?.toLocaleString()}₫</p>
                     <span className="bg-error text-white text-[10px] font-bold px-2 py-1 rounded-full">
-                      -{Math.round((1 - product.sellingPrice / product.mrpPrice) * 100)}%
+                      -{Math.round((1 - currentSellingPrice / currentMrpPrice) * 100)}%
                     </span>
                   </div>
                 ) : null}
@@ -135,20 +171,72 @@ const ProductDetail = () => {
 
             {/* Variations */}
             {variants?.length > 0 ? (
-              <div className="space-y-6">
-                <div className="space-y-3">
-                    <p className="text-sm font-bold uppercase tracking-wider text-secondary">Options</p>
-                    <div className="flex flex-wrap gap-2">
-                        {variants.map(v => (
-                            <button 
-                                key={v.id} 
-                                onClick={() => setSelectedVariant(v)}
-                                className={`px-6 py-2 rounded-xl border text-sm font-bold transition-all ${selectedVariant?.id === v.id ? 'border-2 border-primary text-primary bg-primary/5 shadow-sm' : 'border-outline-variant hover:border-primary hover:text-primary'}`}>
-                                {Object.values(v.attributes).join(' - ')}
-                            </button>
-                        ))}
+              <div className="space-y-6 border-y border-outline-variant/30 py-6">
+                {/* Colors */}
+                {availableColors.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold uppercase tracking-wider text-secondary">Color</p>
+                      <span className="text-xs text-on-surface-variant">Selected: <strong className="text-primary">{selectedColor || 'None'}</strong></span>
                     </div>
-                </div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableColors.map(color => {
+                        const isSelected = selectedColor === color;
+                        const match = variants.find(v => v.attributes?.color === color && v.attributes?.size === selectedSize);
+                        const isAvailable = match ? match.stockQuantity > 0 : true;
+
+                        return (
+                          <button 
+                            key={color} 
+                            onClick={() => setSelectedColor(color)}
+                            className={`px-6 py-2.5 rounded-xl border text-sm font-bold transition-all flex items-center gap-2 ${
+                              isSelected 
+                                ? 'border-2 border-primary text-primary bg-primary/5 shadow-sm ring-2 ring-primary/20' 
+                                : 'border-outline-variant hover:border-primary hover:text-primary bg-surface'
+                            } ${!isAvailable ? 'opacity-40 line-through' : ''}`}
+                          >
+                            <span className="w-3 h-3 rounded-full border border-outline-variant/50 shadow-inner" style={{
+                              backgroundColor: color === 'Đen' ? '#000' : color === 'Trắng' ? '#fff' : color === 'Xanh Navy' ? '#1e3a8a' : color === 'Be' ? '#f3f4f6' : color === 'Xám' ? '#9ca3af' : color === 'Hồng' || color === 'Hồng phấn' ? '#fbcfe8' : color === 'Đỏ rượu' ? '#991b1b' : '#cbd5e1'
+                            }}></span>
+                            {color}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Sizes */}
+                {availableSizes.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold uppercase tracking-wider text-secondary">Size</p>
+                      <span className="text-xs text-on-surface-variant">Selected: <strong className="text-primary">{selectedSize || 'None'}</strong></span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableSizes.map(size => {
+                        const isSelected = selectedSize === size;
+                        const match = variants.find(v => v.attributes?.size === size && v.attributes?.color === selectedColor);
+                        const isAvailable = match ? match.stockQuantity > 0 : true;
+                        const addPrice = match?.additionalPrice || 0;
+
+                        return (
+                          <button 
+                            key={size} 
+                            onClick={() => setSelectedSize(size)}
+                            className={`px-6 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                              isSelected 
+                                ? 'border-2 border-primary text-primary bg-primary/5 shadow-sm ring-2 ring-primary/20' 
+                                : 'border-outline-variant hover:border-primary hover:text-primary bg-surface'
+                            } ${!isAvailable ? 'opacity-40 line-through' : ''}`}
+                          >
+                            {size} {addPrice > 0 ? <span className="text-xs font-normal text-amber-600">(+{addPrice.toLocaleString()}₫)</span> : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -164,16 +252,16 @@ const ProductDetail = () => {
                     <span className="material-symbols-outlined">add</span>
                   </button>
                 </div>
-                <p className="text-xs text-on-surface-variant">{stock || 0} items available</p>
+                <p className="text-xs text-on-surface-variant">{currentStock || 0} items available</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4">
-              <button onClick={handleAddToCart} disabled={stock <= 0} className="flex items-center justify-center gap-2 border-2 border-primary text-primary py-4 rounded-2xl font-bold hover:bg-primary/5 transition-all disabled:opacity-50 active:scale-95">
+              <button onClick={handleAddToCart} disabled={currentStock <= 0} className="flex items-center justify-center gap-2 border-2 border-primary text-primary py-4 rounded-2xl font-bold hover:bg-primary/5 transition-all disabled:opacity-50 active:scale-95">
                 <span className="material-symbols-outlined">add_shopping_cart</span>
                 Add to Cart
               </button>
-              <button disabled={stock <= 0} className="bg-primary text-white py-4 rounded-2xl font-bold hover:bg-blue-800 transition-all shadow-xl shadow-primary/20 disabled:opacity-50 active:scale-95">
+              <button disabled={currentStock <= 0} className="bg-primary text-white py-4 rounded-2xl font-bold hover:bg-blue-800 transition-all shadow-xl shadow-primary/20 disabled:opacity-50 active:scale-95">
                 Buy It Now
               </button>
             </div>
@@ -335,11 +423,9 @@ const ProductDetail = () => {
                           <div className="bg-surface-container-low rounded-3xl p-8 text-center space-y-2 border border-outline-variant/30">
                               <p className="text-5xl font-extrabold text-primary">{product.averageRating || 0}</p>
                               <div className="flex justify-center gap-1 text-primary">
-                                  <span className="material-symbols-outlined fill-current">star</span>
-                                  <span className="material-symbols-outlined fill-current">star</span>
-                                  <span className="material-symbols-outlined fill-current">star</span>
-                                  <span className="material-symbols-outlined fill-current">star</span>
-                                  <span className="material-symbols-outlined fill-current">star</span>
+                                  {[...Array(5)].map((_, i) => (
+                                      <span key={i} className="material-symbols-outlined" style={{ fontVariationSettings: i < Math.round(product.averageRating || 0) ? "'FILL' 1" : "'FILL' 0" }}>star</span>
+                                  ))}
                               </div>
                               <p className="text-sm text-on-surface-variant">Based on {reviews?.length || 0} verified reviews</p>
                           </div>
@@ -386,7 +472,7 @@ const ProductDetail = () => {
                                   <div className="flex justify-between items-start">
                                       <div className="flex gap-4">
                                           {r.user?.avatarUrl && r.user.avatarUrl !== "https://ui-avatars.com/api/?name=User&background=random" ? (
-                                              <img src={r.user.avatarUrl} className="w-12 h-12 rounded-full border border-outline-variant object-cover" alt="Avatar" />
+                                              <img src={r.user.avatarUrl} className="w-12 h-12 rounded-full border border-outline-variant object-cover" alt="Avatar" referrerPolicy="no-referrer" />
                                           ) : (
                                               <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center font-bold text-primary">
                                                   {r.user?.fullName ? r.user.fullName.substring(0, 2).toUpperCase() : 'JD'}
@@ -396,7 +482,7 @@ const ProductDetail = () => {
                                               <h4 className="font-bold text-on-surface">{r.user?.fullName || 'John Doe'}</h4>
                                               <div className="flex text-primary text-[14px]">
                                                   {[...Array(5)].map((_, i) => (
-                                                      <span key={i} className={`material-symbols-outlined text-[16px] ${i < r.rating ? 'fill-current' : ''}`}>star</span>
+                                                      <span key={i} className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: i < r.rating ? "'FILL' 1" : "'FILL' 0" }}>star</span>
                                                   ))}
                                               </div>
                                           </div>
@@ -477,7 +563,12 @@ const ProductDetail = () => {
                     <p className="text-[12px] text-primary mb-2 uppercase tracking-widest font-bold">Recommended</p>
                     <h2 className="text-3xl font-extrabold text-on-surface">You May Also Like</h2>
                 </div>
-                <button className="text-primary font-bold hover:underline">View All</button>
+                <button 
+                    onClick={() => navigate(product?.category?.slug ? `/search?category=${product.category.slug}` : '/search')} 
+                    className="text-primary font-bold hover:underline"
+                >
+                    View All
+                </button>
             </div>
             
             {relatedProducts?.length > 0 ? (

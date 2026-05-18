@@ -97,7 +97,7 @@ const Header = () => {
 
           {user ? (
             <Link to="/user/profile" className="flex items-center gap-2 p-1 pr-3 hover:bg-[#f2f3ff] rounded-full transition-all duration-200 border border-[#c3c6d7]/30">
-              <img src={user.avatarUrl ? (user.avatarUrl.startsWith('http') ? user.avatarUrl : `http://localhost:5000${user.avatarUrl}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName || 'User')}&background=004ac6&color=fff`} alt="Avatar" className="w-8 h-8 rounded-full object-cover" />
+              <img src={user.avatarUrl ? (user.avatarUrl.startsWith('http') ? user.avatarUrl : `http://localhost:5000${user.avatarUrl}`) : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName || 'User')}&background=004ac6&color=fff`} alt="Avatar" className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
               <span className="text-sm font-bold text-[#131b2e] hidden md:block tracking-tight">{user.fullName}</span>
             </Link>
           ) : (

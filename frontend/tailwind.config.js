@@ -20,6 +20,8 @@ export default {
         "outline-variant": "#c3c6d7",
         "secondary": "#434655",
         "error": "#b3261e",
+        "success": "#2e7d32",
+        "warning": "#f59e0b",
       },
       fontFamily: {
         "display": ["Manrope", "sans-serif"],

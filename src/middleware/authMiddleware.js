@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const UserRole = require('../models/UserRole');
+const Role = require('../models/Role');
 const response = require('../utils/response');
 
 const protect = async (req, res, next) => {
@@ -24,6 +26,17 @@ const protect = async (req, res, next) => {
           statusCode: 401,
           message: 'User not found',
         });
+      }
+
+      if (decoded.role) {
+        req.user.role = decoded.role;
+      } else {
+        const userRole = await UserRole.findOne({ user_id: req.user._id }).populate('role_id');
+        if (userRole && userRole.role_id && userRole.role_id.name) {
+          req.user.role = userRole.role_id.name.toLowerCase();
+        } else {
+          req.user.role = 'customer';
+        }
       }
 
       next();

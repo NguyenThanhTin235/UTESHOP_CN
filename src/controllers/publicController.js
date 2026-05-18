@@ -11,6 +11,9 @@ const Shop = require('../models/Shop');
 const User = require('../models/User');
 const { toCamelCase } = require('../utils/formatter');
 
+// Cache lưu trữ lượt xem theo IP + Slug để tránh StrictMode gọi 2 lần hoặc spam refresh
+const viewedCache = new Map();
+
 exports.getHomepageData = async (req, res, next) => {
   try {
     // 1. Fetch Banners
@@ -25,33 +28,64 @@ exports.getHomepageData = async (req, res, next) => {
       end_at: { $gte: new Date() }
     }).limit(1);
 
-    let flashDeals = [];
+    let flashDealsRaw = [];
     if (activeCampaigns.length > 0) {
       const targets = await CampaignTarget.find({ campaign_id: activeCampaigns[0]._id }).limit(4);
       const productIds = targets.map(t => t.product_id);
-      flashDeals = await Product.find({ _id: { $in: productIds }, approval_status: 'approved' });
+      flashDealsRaw = await Product.find({ _id: { $in: productIds }, approval_status: 'approved' });
     }
 
-    // 4. Fetch New Arrivals
-    const newArrivals = await Product.find({ approval_status: 'approved' })
-      .sort({ createdAt: -1 })
-      .limit(10);
-
-    // 5. Fetch Best Sellers (Mocked by rating for now)
-    const bestSellers = await Product.find({ approval_status: 'approved' })
-      .sort({ average_rating: -1 })
-      .limit(10);
-
-    // Helper to attach media to products
-    const attachMedia = async (products) => {
+    // Helper to attach media and calculate averageRating dynamically from ProductReview
+    const attachMediaAndRating = async (products) => {
       return await Promise.all(products.map(async (p) => {
         const media = await ProductMedia.find({ product_id: p._id }).sort({ sort_order: 1 });
+        const reviews = await ProductReview.find({ product_id: p._id });
+        const avgRating = reviews.length > 0 
+          ? Number((reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1))
+          : 5.0;
+
+        const soldData = await OrderItem.aggregate([
+          { $match: { product_id: p._id } },
+          { $lookup: { from: 'orders', localField: 'order_id', foreignField: '_id', as: 'order' } },
+          { $unwind: '$order' },
+          { $match: { 'order.status': 'delivered' } },
+          { $group: { _id: null, totalSold: { $sum: '$quantity' } } }
+        ]);
+        const totalSold = soldData.length > 0 ? soldData[0].totalSold : 0;
+
+        const pObj = typeof p.toObject === 'function' ? p.toObject() : p;
+        delete pObj.average_rating;
+
         return {
-          ...p.toObject(),
+          ...pObj,
+          averageRating: avgRating,
+          reviewCount: reviews.length,
+          soldCount: totalSold,
+          viewCount: pObj.view_count || Math.floor(Math.random() * 500) + 50,
           media: media.map(m => m.media_url)
         };
       }));
     };
+
+    const allApproved = await Product.find({ approval_status: 'approved' });
+    const allWithRating = await attachMediaAndRating(allApproved);
+
+    let flashDeals = [];
+    if (activeCampaigns.length > 0) {
+      const targets = await CampaignTarget.find({ campaign_id: activeCampaigns[0]._id }).limit(10);
+      const productIds = targets.map(t => t.product_id.toString());
+      flashDeals = allWithRating.filter(p => productIds.includes(p._id.toString()));
+    }
+
+    const newArrivals = [...allWithRating].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
+    const bestSellers = [...allWithRating].sort((a, b) => b.soldCount - a.soldCount).slice(0, 10);
+    const mostViewed = [...allWithRating].sort((a, b) => b.viewCount - a.viewCount).slice(0, 10);
+    const biggestDiscounts = [...allWithRating].sort((a, b) => {
+      const discA = 1 - (a.sellingPrice / (a.mrpPrice || a.sellingPrice));
+      const discB = 1 - (b.sellingPrice / (b.mrpPrice || b.sellingPrice));
+      return discB - discA;
+    }).slice(0, 10);
+    const recommended = allWithRating.slice(0, 10);
 
     res.status(200).json({
       success: true,
@@ -60,9 +94,12 @@ exports.getHomepageData = async (req, res, next) => {
       data: toCamelCase({
         banners,
         categories,
-        flashDeals: await attachMedia(flashDeals),
-        newArrivals: await attachMedia(newArrivals),
-        bestSellers: await attachMedia(bestSellers),
+        flashDeals,
+        recommended,
+        newArrivals,
+        bestSellers,
+        mostViewed,
+        biggestDiscounts,
         campaign: activeCampaigns[0] || null
       }),
       timestamp: Math.floor(Date.now() / 1000)
@@ -88,8 +125,28 @@ exports.getProductDetail = async (req, res, next) => {
       });
     }
 
-    // 2. Fetch Shop with more stats
-    const shop = await Shop.findById(product.shop_id).select('name slug logo_url address rating status followers response_rate joined_at response_time');
+    // Kiểm tra cache chống StrictMode gọi 2 lần hoặc spam refresh (cooldown 3 giây)
+    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    const cacheKey = `${clientIp}_${slug}`;
+    const now = Date.now();
+
+    if (!viewedCache.has(cacheKey) || (now - viewedCache.get(cacheKey) > 3000)) {
+      await Product.findOneAndUpdate({ slug }, { $inc: { view_count: 1 } });
+      viewedCache.set(cacheKey, now);
+    }
+
+    // 2. Fetch Shop with more stats & calculate shop rating dynamically
+    const shopRaw = await Shop.findById(product.shop_id).select('name slug logo_url address status followers response_rate joined_at response_time product_count');
+    const shopProducts = await Product.find({ shop_id: product.shop_id }).select('_id');
+    const pIds = shopProducts.map(p => p._id);
+    const shopReviews = await ProductReview.find({ product_id: { $in: pIds } });
+    const shopRating = shopReviews.length > 0 
+      ? Number((shopReviews.reduce((acc, r) => acc + r.rating, 0) / shopReviews.length).toFixed(1))
+      : 5.0;
+
+    const shop = shopRaw ? shopRaw.toObject() : {};
+    delete shop.rating;
+    shop.rating = shopRating;
 
     // 3. Fetch Category hierarchy (up to 3 levels)
     let breadcrumbs = [];
@@ -113,19 +170,24 @@ exports.getProductDetail = async (req, res, next) => {
       ? variants.reduce((acc, v) => acc + (v.stock_quantity || 0), 0)
       : 100;
 
-    // 6. Calculate Sold Quantity
+    // 6. Calculate Sold Quantity (real data only)
     const soldData = await OrderItem.aggregate([
       { $match: { product_id: product._id } },
+      { $lookup: { from: 'orders', localField: 'order_id', foreignField: '_id', as: 'order' } },
+      { $unwind: '$order' },
+      { $match: { 'order.status': 'delivered' } },
       { $group: { _id: null, totalSold: { $sum: '$quantity' } } }
     ]);
-    // Base sold count + real sold data
-    const baseSold = product.sku ? (parseInt(product.sku.split('-').pop()) || 0) * 10 : 0;
-    const totalSold = (soldData.length > 0 ? soldData[0].totalSold : 0) + baseSold + 50;
+    const totalSold = soldData.length > 0 ? soldData[0].totalSold : 0;
 
     // 7. Fetch Reviews with better details
     const reviews = await ProductReview.find({ product_id: product._id })
       .populate('user_id', 'full_name avatar_url')
       .sort({ createdAt: -1 });
+
+    const avgRating = reviews.length > 0 
+      ? Number((reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1))
+      : 5.0;
 
     // 8. Fetch Related Products (Same category, approved, not current)
     const relatedProductsRaw = await Product.find({ 
@@ -137,19 +199,41 @@ exports.getProductDetail = async (req, res, next) => {
     const relatedProducts = await Promise.all(relatedProductsRaw.map(async (p) => {
       const pMedia = await ProductMedia.find({ product_id: p._id }).sort({ sort_order: 1 }).limit(1);
       const pCat = await Category.findById(p.category_id).select('name');
+      const pReviews = await ProductReview.find({ product_id: p._id });
+      const pAvg = pReviews.length > 0 ? Number((pReviews.reduce((acc, r) => acc + r.rating, 0) / pReviews.length).toFixed(1)) : 5.0;
+
+      const soldData = await OrderItem.aggregate([
+        { $match: { product_id: p._id } },
+        { $lookup: { from: 'orders', localField: 'order_id', foreignField: '_id', as: 'order' } },
+        { $unwind: '$order' },
+        { $match: { 'order.status': 'delivered' } },
+        { $group: { _id: null, totalSold: { $sum: '$quantity' } } }
+      ]);
+      const totalSold = soldData.length > 0 ? soldData[0].totalSold : 0;
+
+      const relObj = p.toObject();
+      delete relObj.average_rating;
+
       return {
-        ...p.toObject(),
+        ...relObj,
+        averageRating: pAvg,
+        reviewCount: pReviews.length,
+        soldCount: totalSold,
         media: pMedia.map(m => m.media_url),
         category: pCat
       };
     }));
+
+    const pObj = product.toObject();
+    delete pObj.average_rating;
+    pObj.averageRating = avgRating;
 
     res.status(200).json({
       success: true,
       code: 200,
       message: 'Product details fetched successfully',
       data: toCamelCase({
-        product,
+        product: pObj,
         shop,
         category: {
           breadcrumbs
@@ -202,6 +286,8 @@ exports.searchProducts = async (req, res, next) => {
       maxPrice,
       rating,
       sort,
+      color,
+      dimension,
       page = 1,
       limit = 12
     } = req.query;
@@ -218,14 +304,16 @@ exports.searchProducts = async (req, res, next) => {
 
     // 2. Category Filter
     if (category) {
-      // Find category and its children if needed, but for now exact match or specific hierarchy
       const cat = await Category.findOne({ slug: category });
       if (cat) {
-        // If it's a parent, we might want to include subcategories. 
-        // For simplicity, let's just find products in this exact category or its children.
+        // Find direct children (Level 2 or Level 3)
         const subCats = await Category.find({ parent_id: cat._id });
-        const catIds = [cat._id, ...subCats.map(c => c._id)];
-        query.category_id = { $in: catIds };
+        const subCatIds = subCats.map(c => c._id);
+        // Find grandchildren (Level 3)
+        const grandSubCats = await Category.find({ parent_id: { $in: subCatIds } });
+        
+        const allCatIds = [cat._id, ...subCatIds, ...grandSubCats.map(c => c._id)];
+        query.category_id = { $in: allCatIds };
       }
     }
 
@@ -236,46 +324,123 @@ exports.searchProducts = async (req, res, next) => {
       if (maxPrice) query.selling_price.$lte = Number(maxPrice);
     }
 
-    // 4. Rating
-    if (rating) {
-      query.average_rating = { $gte: Number(rating) };
-    }
+    // Fetch all matching products first to calculate dynamic rating
+    const allProducts = await Product.find(query);
 
-    // 5. Sorting
-    let sortOption = { createdAt: -1 }; // Default: Newest
-    if (sort === 'price_asc') sortOption = { selling_price: 1 };
-    else if (sort === 'price_desc') sortOption = { selling_price: -1 };
-    else if (sort === 'top_rated') sortOption = { average_rating: -1 };
-    else if (sort === 'oldest') sortOption = { createdAt: 1 };
-
-    // 6. Execution with Pagination
-    const skip = (Number(page) - 1) * Number(limit);
-    const total = await Product.countDocuments(query);
-    const products = await Product.find(query)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(Number(limit));
-
-    // 7. Attach Media & Categories
-    const results = await Promise.all(products.map(async (p) => {
+    // Attach Media, Categories, Variants & dynamically calculate averageRating from ProductReview
+    let results = await Promise.all(allProducts.map(async (p) => {
       const media = await ProductMedia.find({ product_id: p._id }).sort({ sort_order: 1 }).limit(1);
       const cat = await Category.findById(p.category_id).select('name slug');
+      const reviews = await ProductReview.find({ product_id: p._id });
+      const variants = await ProductVariant.find({ product_id: p._id });
+      const avgRating = reviews.length > 0 
+        ? Number((reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1))
+        : 5.0;
+
+      const soldData = await OrderItem.aggregate([
+        { $match: { product_id: p._id } },
+        { $lookup: { from: 'orders', localField: 'order_id', foreignField: '_id', as: 'order' } },
+        { $unwind: '$order' },
+        { $match: { 'order.status': 'delivered' } },
+        { $group: { _id: null, totalSold: { $sum: '$quantity' } } }
+      ]);
+      const totalSold = soldData.length > 0 ? soldData[0].totalSold : 0;
+
+      const pObj = p.toObject();
+      delete pObj.average_rating;
+
       return {
-        ...p.toObject(),
+        ...pObj,
+        averageRating: avgRating,
+        reviewCount: reviews.length,
+        soldCount: totalSold,
+        viewCount: pObj.view_count || Math.floor(Math.random() * 500) + 50,
         media: media.map(m => m.media_url),
-        category: cat
+        category: cat,
+        variants
       };
     }));
+
+    // 4. Rating Filter in JS
+    if (rating) {
+      results = results.filter(p => p.averageRating >= Number(rating));
+    }
+
+    // Color Filter
+    if (color) {
+      const targetColor = String(color).toLowerCase();
+      results = results.filter(p => {
+        if (!p.variants || p.variants.length === 0) return false;
+        return p.variants.some(v => {
+          if (!v.attributes) return false;
+          const cAttr = v.attributes.color || v.attributes.Color || v.attributes.màu || v.attributes.Màu;
+          if (!cAttr) return false;
+          const val = String(cAttr).toLowerCase();
+          if (targetColor === 'black') return val.includes('đen');
+          if (targetColor === 'white') return val.includes('trắng');
+          if (targetColor === 'blue') return val.includes('xanh') || val.includes('blue') || val.includes('navy');
+          if (targetColor === 'grey') return val.includes('xám') || val.includes('bạc') || val.includes('be') || val.includes('vàng');
+          return val === targetColor;
+        });
+      });
+    }
+
+    // Dimension Filter
+    if (dimension) {
+      const targetDim = String(dimension).toLowerCase();
+      results = results.filter(p => {
+        if (!p.variants || p.variants.length === 0) return false;
+        return p.variants.some(v => {
+          if (!v.attributes) return false;
+          const dAttr = v.attributes.dimension || v.attributes.Dimension || v.attributes.size || v.attributes.Size || v.attributes.kích_thước || v.attributes.Kích_thước;
+          if (!dAttr) return false;
+          const val = String(dAttr).toLowerCase();
+          if (targetDim === 'compact') return val === 's' || val === '28' || val === '30' || val.includes('0-6m') || val.includes('6-12m') || val.includes('compact');
+          if (targetDim === 'standard') return val === 'm' || val === 'l' || val === '32' || val === '38' || val === '39' || val === '40' || val.includes('12-18m') || val.includes('tiêu chuẩn') || val.includes('free size') || val.includes('standard');
+          if (targetDim === 'large') return val === 'xl' || val === '41' || val === '42' || val.includes('18-24m') || val.includes('large');
+          return val === targetDim;
+        });
+      });
+    }
+
+    // 5. Sorting in JS
+    if (sort === 'price_asc') {
+      results.sort((a, b) => a.selling_price - b.selling_price);
+    } else if (sort === 'price_desc') {
+      results.sort((a, b) => b.selling_price - a.selling_price);
+    } else if (sort === 'top_rated') {
+      results.sort((a, b) => b.averageRating - a.averageRating);
+    } else if (sort === 'best_sellers') {
+      results.sort((a, b) => b.soldCount - a.soldCount);
+    } else if (sort === 'most_viewed') {
+      results.sort((a, b) => b.viewCount - a.viewCount);
+    } else if (sort === 'biggest_discount') {
+      results.sort((a, b) => {
+        const discA = 1 - (a.selling_price / (a.mrp_price || a.selling_price));
+        const discB = 1 - (b.selling_price / (b.mrp_price || b.selling_price));
+        return discB - discA;
+      });
+    } else if (sort === 'oldest') {
+      results.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    } else {
+      // Default: Newest
+      results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    // 6. Pagination in JS
+    const total = results.length;
+    const skip = (Number(page) - 1) * Number(limit);
+    const paginatedResults = results.slice(skip, skip + Number(limit));
 
     res.status(200).json({
       success: true,
       code: 200,
       message: 'Products fetched successfully',
-      data: toCamelCase(results),
+      data: toCamelCase(paginatedResults),
       meta: {
         pagination: {
           total,
-          count: results.length,
+          count: paginatedResults.length,
           perPage: Number(limit),
           currentPage: Number(page),
           totalPages: Math.ceil(total / Number(limit))
