@@ -12,12 +12,22 @@ import Cart from './pages/Cart';
 import Wishlist from './pages/Wishlist';
 import Notifications from './pages/Notifications';
 import OrderHistory from './pages/OrderHistory';
+import OrderDetail from './pages/OrderDetail';
+import CancelOrder from './pages/CancelOrder';
 import Reviews from './pages/Reviews';
 import AddressBook from './pages/AddressBook';
 import AdminDashboard from './pages/AdminDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import SellerDashboard from './pages/SellerDashboard';
+import SecuritySettings from './pages/SecuritySettings';
 import ProtectedRoute from './components/ProtectedRoute';
+import Checkout from './pages/Checkout';
+import OrderSuccess from './pages/OrderSuccess';
+import VNPayMock from './pages/VNPayMock';
+import VNPayReturn from './pages/VNPayReturn';
+import Coins from './pages/Coins';
+import ShopDetail from './pages/ShopDetail';
+
 
 import { Toaster, useToasterStore, toast } from 'react-hot-toast';
 import { useEffect } from 'react';
@@ -71,14 +81,23 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/user/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
         <Route path="/order-history" element={user ? <OrderHistory /> : <Navigate to="/login" />} />
+        <Route path="/order-history/:orderId" element={user ? <OrderDetail /> : <Navigate to="/login" />} />
+        <Route path="/order-history/:orderId/cancel" element={user ? <CancelOrder /> : <Navigate to="/login" />} />
         <Route path="/reviews" element={user ? <Reviews /> : <Navigate to="/login" />} />
         <Route path="/wishlist" element={user ? <Wishlist /> : <Navigate to="/login" />} />
         <Route path="/address-book" element={user ? <AddressBook /> : <Navigate to="/login" />} />
+        <Route path="/security" element={user ? <SecuritySettings /> : <Navigate to="/login" />} />
+        <Route path="/coins" element={user ? <Coins /> : <Navigate to="/login" />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/checkout" element={user ? <Checkout /> : <Navigate to="/login" />} />
+        <Route path="/order-success" element={user ? <OrderSuccess /> : <Navigate to="/login" />} />
+        <Route path="/vnpay-mock" element={user ? <VNPayMock /> : <Navigate to="/login" />} />
+        <Route path="/payment/vnpay/return" element={user ? <VNPayReturn /> : <Navigate to="/login" />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/login" element={!user ? <Login /> : <RoleBasedRedirect user={user} />} />
         <Route path="/product/:slug" element={<ProductDetail />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/shop/:slug" element={<ShopDetail />} />
         
         {/* Protected Dashboard Routes */}
         <Route path="/admin/*" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />

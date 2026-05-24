@@ -39,16 +39,29 @@ export const registerUser = createAsyncThunk(
 
 export const login = createAsyncThunk(
   'auth/login',
-  async (userData, thunkAPI) => {
+  async ({ email, password, rememberMe = false }, thunkAPI) => {
     try {
-      const response = await axios.post(`${API_URL}/login`, userData);
-      return response.data;
+      const response = await axios.post(`${API_URL}/login`, { email, password });
+      return { ...response.data, rememberMe };
     } catch (error) {
       let message = error.response?.data?.message || error.message || error.toString();
       if (error.response?.data?.errors) {
         const firstError = Object.values(error.response.data.errors)[0];
         message = firstError;
       }
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+export const verify2FALogin = createAsyncThunk(
+  'auth/verify2FALogin',
+  async (verifyData, thunkAPI) => {
+    try {
+      const response = await axios.post(`${API_URL}/verify-2fa`, verifyData);
+      return response.data;
+    } catch (error) {
+      let message = error.response?.data?.message || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -133,6 +146,7 @@ export const googleLogin = createAsyncThunk(
       if (response.data.data) {
         sessionStorage.setItem('user', JSON.stringify(response.data.data.user));
         sessionStorage.setItem('token', response.data.data.token);
+        // Google login: do NOT auto-persist to localStorage
       }
       return response.data;
     } catch (error) {
@@ -145,7 +159,21 @@ export const googleLogin = createAsyncThunk(
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    user: JSON.parse(sessionStorage.getItem('user')) || null,
+    // Only restore from sessionStorage. If sessionStorage is empty but localStorage has data,
+    // it means the user did NOT tick "Remember me" in a previous session, so treat as logged out.
+    user: (() => {
+      const sessionUser = sessionStorage.getItem('user');
+      if (sessionUser) return JSON.parse(sessionUser);
+      const lsUser = localStorage.getItem('user');
+      const lsToken = localStorage.getItem('token');
+      if (lsUser && lsToken) {
+        // Restore into sessionStorage so the rest of the app can read it
+        sessionStorage.setItem('user', lsUser);
+        sessionStorage.setItem('token', lsToken);
+        return JSON.parse(lsUser);
+      }
+      return null;
+    })(),
     isError: false,
     isSuccess: false,
     isLoading: false,
@@ -161,6 +189,8 @@ const authSlice = createSlice({
     logout: (state) => {
       sessionStorage.removeItem('user');
       sessionStorage.removeItem('token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
       state.user = null;
       state.isError = false;
       state.isSuccess = false;
@@ -193,6 +223,9 @@ const authSlice = createSlice({
         state.user = action.payload.data.user;
         sessionStorage.setItem('user', JSON.stringify(action.payload.data.user));
         sessionStorage.setItem('token', action.payload.data.token);
+        // New registrations don't auto-persist (no rememberMe)
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.isLoading = false;
@@ -207,15 +240,46 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        state.user = action.payload.data.user;
-        sessionStorage.setItem('user', JSON.stringify(action.payload.data.user));
-        sessionStorage.setItem('token', action.payload.data.token);
+        if (action.payload.data && action.payload.data.user) {
+          state.user = action.payload.data.user;
+          sessionStorage.setItem('user', JSON.stringify(action.payload.data.user));
+          sessionStorage.setItem('token', action.payload.data.token);
+          if (action.payload.rememberMe) {
+            // Persist across browser sessions
+            localStorage.setItem('user', JSON.stringify(action.payload.data.user));
+            localStorage.setItem('token', action.payload.data.token);
+          } else {
+            // Clear any stale persisted data
+            localStorage.removeItem('user');
+            localStorage.removeItem('token');
+          }
+        }
       })
       .addCase(login.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
         state.user = null;
+      })
+      .addCase(verify2FALogin.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(verify2FALogin.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.message = action.payload.message;
+        if (action.payload.data && action.payload.data.user) {
+          state.user = action.payload.data.user;
+          sessionStorage.setItem('user', JSON.stringify(action.payload.data.user));
+          sessionStorage.setItem('token', action.payload.data.token);
+          localStorage.setItem('user', JSON.stringify(action.payload.data.user));
+          localStorage.setItem('token', action.payload.data.token);
+        }
+      })
+      .addCase(verify2FALogin.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
       })
       .addCase(forgotPassword.pending, (state) => {
         state.isLoading = true;

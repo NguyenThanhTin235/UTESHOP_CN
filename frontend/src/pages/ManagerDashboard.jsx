@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../redux/authSlice';
 import toast from 'react-hot-toast';
+import axios from 'axios';
 
 const ManagerDashboard = () => {
   const { user } = useSelector((state) => state.auth);
@@ -11,6 +12,7 @@ const ManagerDashboard = () => {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
   const [showAI, setShowAI] = useState(false);
   const [aiInput, setAiInput] = useState('');
   const [aiMessages, setAiMessages] = useState([
@@ -23,6 +25,29 @@ const ManagerDashboard = () => {
     navigate('/login');
     toast.success('Logged out successfully');
   };
+
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+        const config = {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        };
+        const response = await axios.get('http://localhost:5000/api/notifications', config);
+        if (response.data && response.data.success) {
+          const data = response.data.data || [];
+          const unread = data.filter(n => !n.is_read).length;
+          setUnreadCount(unread);
+        }
+      } catch (error) {
+        console.error('Fetch unread notifications error:', error);
+      }
+    };
+
+    fetchUnreadCount();
+  }, [user]);
 
   const handleAiSubmit = (e) => {
     e.preventDefault();
@@ -140,9 +165,16 @@ const ManagerDashboard = () => {
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-xl transition-all relative cursor-pointer border border-slate-100">
+            <button 
+              onClick={() => navigate('/notifications')}
+              className="w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-xl transition-all relative cursor-pointer border border-slate-100"
+            >
               <span className="material-symbols-outlined text-2xl">notifications</span>
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[#b3261e] rounded-full border-2 border-white"></span>
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-[#ba1a1a] text-[10px] text-white flex items-center justify-center rounded-full font-bold shadow-sm">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
             <div className="h-8 w-px bg-slate-200 mx-2"></div>
             <div className="flex items-center gap-3 bg-[#F1F5F9] pl-1 pr-4 py-1 rounded-full border border-slate-200 cursor-pointer hover:bg-slate-200 transition-all group">

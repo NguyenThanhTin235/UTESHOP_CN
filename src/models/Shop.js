@@ -14,7 +14,13 @@ const shopSchema = new mongoose.Schema({
   response_rate: { type: Number, default: 0 }, // Percentage
   joined_at: { type: Date, default: Date.now },
   response_time: { type: String, default: 'within hours' },
-  product_count: { type: Number, default: 0 }
+  product_count: { type: Number, default: 0 },
+  email: { type: String },
+  shipping_carriers: {
+    ghtk: { type: Boolean, default: true },
+    grab: { type: Boolean, default: false },
+    jt: { type: Boolean, default: true }
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Shop', shopSchema);

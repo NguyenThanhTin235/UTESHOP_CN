@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import FABGroup from '../components/FABGroup';
@@ -8,10 +9,13 @@ import toast from 'react-hot-toast';
 
 const Search = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useSelector((state) => state.auth);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [meta, setMeta] = useState(null);
+  const [wishlistIds, setWishlistIds] = useState([]);
 
   // Filter states
   const [minPrice, setMinPrice] = useState(searchParams.get('minPrice') || '');
@@ -65,6 +69,92 @@ const Search = () => {
     };
     fetchProducts();
   }, [searchParams]);
+
+  // Fetch user wishlist
+  useEffect(() => {
+    const fetchWishlist = async () => {
+      if (!user) {
+        setWishlistIds([]);
+        return;
+      }
+      try {
+        const config = {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`,
+          },
+        };
+        const response = await axios.get('http://localhost:5000/api/users/wishlist', config);
+        if (response.data && response.data.success) {
+          const ids = response.data.data.map(item => item.productId);
+          setWishlistIds(ids);
+        }
+      } catch (error) {
+        console.error('Error fetching wishlist:', error);
+      }
+    };
+    fetchWishlist();
+  }, [user]);
+
+  const handleToggleWishlist = async (productId) => {
+    if (!user) {
+      toast.error('Please log in to manage your wishlist');
+      return;
+    }
+    const isWishlisted = wishlistIds.includes(productId);
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`,
+        },
+      };
+      if (isWishlisted) {
+        const response = await axios.delete(`http://localhost:5000/api/users/wishlist/${productId}`, config);
+        if (response.data && response.data.success) {
+          setWishlistIds(prev => prev.filter(id => id !== productId));
+          toast.success('Removed from wishlist');
+        }
+      } else {
+        const response = await axios.post('http://localhost:5000/api/users/wishlist', { productId }, config);
+        if (response.data && response.data.success) {
+          setWishlistIds(prev => [...prev, productId]);
+          toast.success('Added to wishlist');
+        }
+      }
+    } catch (error) {
+      toast.error('Error updating wishlist');
+    }
+  };
+
+  const handleAddToCart = async (productId) => {
+    if (!user) {
+      toast.error('Please log in to add products to your cart');
+      navigate('/login');
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+      const response = await axios.post(
+        'http://localhost:5000/api/cart/add',
+        {
+          productId,
+          variantId: null,
+          quantity: 1
+        },
+        config
+      );
+      if (response.data && response.data.success) {
+        toast.success('Product added to cart successfully!');
+        window.dispatchEvent(new Event('cartUpdate'));
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add product to cart');
+    }
+  };
 
   const [expandedCategories, setExpandedCategories] = useState([]);
 
@@ -412,11 +502,17 @@ const Search = () => {
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#004ac6]"></div>
               </div>
             ) : products.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {products.map((product) => (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {products.map((product) => {
+                  const isWishlisted = wishlistIds.includes(product.id || product._id);
+                  return (
                   <div key={product.id} className="group bg-white rounded-2xl border border-transparent hover:border-[#c3c6d7] hover:shadow-xl transition-all duration-500 overflow-hidden relative flex flex-col h-full shadow-sm">
-                    <button className="absolute top-4 right-4 z-10 w-10 h-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-[#505f76] hover:text-red-500 hover:bg-white transition-all shadow-sm">
-                      <span className="material-symbols-outlined text-[20px]">favorite</span>
+                    <button 
+                      onClick={() => handleToggleWishlist(product.id || product._id)}
+                      title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                      className="absolute top-3 right-3 z-10 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-[#004ac6] hover:bg-white hover:scale-110 transition-all shadow-sm cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: isWishlisted ? "'FILL' 1" : "'FILL' 0" }}>favorite</span>
                     </button>
                     <Link to={`/product/${product.slug}`} className="aspect-square bg-[#f2f3ff] relative overflow-hidden block">
                       <img 
@@ -424,34 +520,41 @@ const Search = () => {
                         alt={product.name} 
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                       />
-                      {product.averageRating >= 4.8 && (
-                        <div className="absolute bottom-4 left-4">
-                          <span className="bg-[#004ac6] text-white text-[10px] font-extrabold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest">Best Seller</span>
-                        </div>
-                      )}
                     </Link>
-                    <div className="p-5 flex-grow flex flex-col">
-                      <p className="text-[10px] font-bold text-[#505f76] uppercase tracking-widest mb-1">{product.category?.name || 'Category'}</p>
-                      <Link to={`/product/${product.slug}`} className="font-bold text-lg group-hover:text-[#004ac6] transition-colors line-clamp-2 h-[2.8rem] overflow-hidden leading-tight mb-2">
-                        {product.name}
-                      </Link>
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="flex items-center text-[#004ac6]">
-                          <span className="material-symbols-outlined text-[14px] fill-current text-amber-500">star</span>
-                          <span className="text-xs font-bold ml-1">{product.averageRating || '5.0'}</span>
+                    <div className="p-4 flex-grow flex flex-col justify-between space-y-3">
+                      <div>
+                        <p className="text-[10px] font-bold text-[#505f76] uppercase tracking-widest mb-1">{product.category?.name || 'Category'}</p>
+                        <Link to={`/product/${product.slug}`} className="font-bold text-sm leading-5 group-hover:text-[#004ac6] transition-colors line-clamp-2 h-10 overflow-hidden mb-2">
+                          {product.name}
+                        </Link>
+                        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                          <div className="flex items-center text-[#004ac6]">
+                            <span className="material-symbols-outlined text-[14px] fill-current text-amber-500">star</span>
+                            <span className="text-xs font-bold ml-0.5">{product.averageRating || '5.0'}</span>
+                          </div>
+                          <span className="text-[10px] text-[#434655]">({product.reviewCount || 0})</span>
+                          <span className="text-[10px] text-[#434655] ml-auto font-medium">Sold {product.soldCount || 0}</span>
                         </div>
-                        <span className="text-xs text-[#434655]">({product.reviewCount || 0} reviews)</span>
-                        <span className="text-xs text-[#434655] ml-auto font-medium">Sold {product.soldCount || 0}</span>
                       </div>
-                      <div className="flex items-center justify-between pt-4 border-t border-[#c3c6d7]/30 mt-auto">
-                        <span className="font-bold text-xl text-[#004ac6]">{product.sellingPrice.toLocaleString()}₫</span>
-                        <button className="w-10 h-10 bg-[#eaedff] text-[#004ac6] rounded-xl flex items-center justify-center hover:bg-[#004ac6] hover:text-white transition-all">
-                          <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
+                      <div className="flex items-center justify-between pt-3 border-t border-[#c3c6d7]/30 mt-auto">
+                        {product.mrpPrice > product.sellingPrice ? (
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-base text-[#004ac6]">{product.sellingPrice.toLocaleString()}₫</span>
+                            <span className="text-xs text-[#505f76] line-through">{product.mrpPrice.toLocaleString()}₫</span>
+                          </span>
+                        ) : (
+                          <span className="font-bold text-base text-[#004ac6]">{product.sellingPrice.toLocaleString()}₫</span>
+                        )}
+                        <button 
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAddToCart(product.id || product._id); }}
+                          className="w-8 h-8 bg-[#eaedff] text-[#004ac6] rounded-xl flex items-center justify-center hover:bg-[#004ac6] hover:text-white transition-all cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add_shopping_cart</span>
                         </button>
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             ) : (
               <div className="text-center py-20 bg-white rounded-2xl border border-[#c3c6d7] shadow-sm">

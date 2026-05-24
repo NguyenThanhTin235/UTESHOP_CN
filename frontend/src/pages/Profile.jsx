@@ -118,7 +118,7 @@ const Profile = () => {
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-[#c3c6d7]/30 mb-2 text-left">
             <div className="flex items-center space-x-4">
               <div className="w-12 h-12 rounded-full overflow-hidden bg-[#004ac6] flex items-center justify-center text-white font-bold text-xl shadow-md flex-shrink-0">
-                <img src={avatarSrc} alt={user?.fullName || 'Avatar'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={avatarSrc} alt={user?.fullName || 'Avatar'} className="w-full h-full object-cover" />
               </div>
               <div className="overflow-hidden">
                 <h3 className="font-bold text-[#131b2e] tracking-tight truncate">{user?.fullName || 'User'}</h3>
@@ -188,7 +188,6 @@ const Profile = () => {
                         alt="Current Avatar" 
                         className="w-full h-full object-cover" 
                         src={avatarSrc}
-                        referrerPolicy="no-referrer"
                       />
                     </div>
                     <div className="absolute inset-0 bg-[#004ac6]/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl backdrop-blur-sm">

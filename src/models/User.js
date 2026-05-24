@@ -16,7 +16,12 @@ const userSchema = new mongoose.Schema({
   email_verified_at: { type: Date },
   gender: { type: String, enum: ['male', 'female', 'other'] },
   dob: { type: Date },
-  coin_balance: { type: Number, default: 0 }
+  coin_balance: { type: Number, default: 0 },
+  two_factor_enabled: { type: Boolean, default: false },
+  security_alerts: {
+    login_alerts: { type: Boolean, default: true },
+    password_changes: { type: Boolean, default: true }
+  }
 
 }, {
   timestamps: true

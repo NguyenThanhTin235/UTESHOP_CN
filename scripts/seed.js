@@ -1,7 +1,12 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcryptjs');
+
 const connectDB = require('../src/config/db');
 
+// Import all models
 const User = require('../src/models/User');
 const Role = require('../src/models/Role');
 const Permission = require('../src/models/Permission');
@@ -59,9 +64,6 @@ const CoinSetting = require('../src/models/CoinSetting');
 const WithdrawRequest = require('../src/models/WithdrawRequest');
 const OTP = require('../src/models/OTP');
 
-const bcrypt = require('bcryptjs');
-const cloudinaryData = require('../IMAGE/cloudinary_links.json');
-
 const slugify = (text) => {
   return text
     .toString()
@@ -74,36 +76,142 @@ const slugify = (text) => {
     .replace(/-+/g, '-');
 };
 
+const normalizeAttributes = (thuoc_tinh) => {
+  const attrs = {};
+  if (!thuoc_tinh) return attrs;
+  
+  for (const [key, val] of Object.entries(thuoc_tinh)) {
+    const lowerKey = key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (lowerKey.includes('mau')) {
+      attrs.color = val;
+    } else if (lowerKey.includes('size') || lowerKey.includes('kich') || lowerKey.includes('co')) {
+      attrs.size = val;
+    } else {
+      attrs[key] = val;
+    }
+  }
+  return attrs;
+};
+
+const cleanHtmlImg = (html) => {
+  if (!html) return html;
+  return html
+    .replace(/<img[^>]*>/gi, '')
+    .replace(/<p>\s*(?:&nbsp;|\s)*<\/p>/gi, '')
+    .replace(/<p><\/p>/gi, '');
+};
+
+
+const dataDir = path.join(__dirname, '../DATA');
+
+function scanDataDirectory() {
+  const productsFiles = [];
+  if (!fs.existsSync(dataDir)) {
+    console.error(`DATA directory not found at ${dataDir}`);
+    return productsFiles;
+  }
+  const level1Dirs = fs.readdirSync(dataDir);
+  for (const level1 of level1Dirs) {
+    const level1Path = path.join(dataDir, level1);
+    if (!fs.statSync(level1Path).isDirectory()) continue;
+    
+    const level2Dirs = fs.readdirSync(level1Path);
+    for (const level2 of level2Dirs) {
+      const level2Path = path.join(level1Path, level2);
+      if (!fs.statSync(level2Path).isDirectory()) continue;
+      
+      const filePath = path.join(level2Path, 'products.json');
+      if (fs.existsSync(filePath)) {
+        productsFiles.push({
+          level1Name: level1,
+          level2Name: level2,
+          filePath: filePath
+        });
+      }
+    }
+  }
+  return productsFiles;
+}
+
+const getShopForProduct = (level1Name, level2Name, shopsMap) => {
+  const l1 = level1Name.toUpperCase().trim();
+  const l2 = level2Name.toUpperCase().trim();
+
+  if (l1 === 'KID & BABY') {
+    return shopsMap.kids;
+  }
+  if (l1 === 'SPORTS') {
+    return shopsMap.sports;
+  }
+  if (l1 === 'WOMEN') {
+    if (l2 === 'SHOES') {
+      return shopsMap.shoes;
+    }
+    return shopsMap.women;
+  }
+  if (l1 === 'MEN') {
+    if (l2 === 'SHOES') {
+      return shopsMap.shoes;
+    }
+    return shopsMap.men;
+  }
+  if (l1 === 'UNISEX') {
+    if (l2 === 'SHOES') {
+      return shopsMap.shoes;
+    }
+    return shopsMap.men;
+  }
+  return shopsMap.men;
+};
+
 const seedFashionData = async () => {
   try {
     await connectDB();
 
     const hashedPassword = await bcrypt.hash('password123', 10);
 
-    console.log('🧹 Clearing all collections...');
+    console.log('🧹 Clearing product-related and transactional collections...');
+    const modelsToClear = [
+      Shop, SellerWallet, SellerWalletTransaction, Category, Product, ProductVariant, ProductMedia, ProductApproval,
+      Campaign, CampaignTarget, Coupon, CouponRedemption, PaymentOrder, Payment, Order, OrderItem,
+      OrderStatusHistory, OrderCancellation, Cart, CartItem, Wishlist, ShippingPartner, ProductReview, ProductReviewMedia,
+      ShopReview, ShippingReview, Conversation, Message, ChatbotSession, ChatbotMessage, Notification,
+      CoinTransaction, WithdrawRequest, Shipment, ShipmentEvent, ReturnRequest, ReturnEvidenceMedia, Dispute,
+      Refund, RefundTransaction, Banner, HomepageSection, FeaturedCategory, OTP, AuditLog, PlatformFeeSetting, CoinSetting
+    ];
 
-    const collections = Object.keys(mongoose.connection.collections);
-    for (const collectionName of collections) {
-      await mongoose.connection.collections[collectionName].deleteMany({});
+    for (const Model of modelsToClear) {
+      await Model.deleteMany({});
     }
 
     const imageUrl = 'https://res.cloudinary.com/dmxxo6wgl/image/upload/v1778635722/download_11_p83s9g.jpg';
 
-    console.log('🔑 Seeding Permissions & Roles...');
-    const permissions = await Permission.insertMany([
+    console.log('🔑 Ensuring Permissions & Roles exist...');
+    const requiredPermissions = [
       { name: 'USER_VIEW', module: 'User' },
       { name: 'USER_EDIT', module: 'User' },
       { name: 'PRODUCT_MANAGE', module: 'Product' },
       { name: 'PRODUCT_APPROVE', module: 'Product' },
       { name: 'ORDER_VIEW', module: 'Order' },
       { name: 'FINANCE_MANAGE', module: 'Finance' }
-    ]);
+    ];
 
-    const adminRole = await Role.create({ name: 'ADMIN', description: 'Quản trị viên tối cao' });
-    const managerRole = await Role.create({ name: 'MANAGER', description: 'Quản lý vận hành' });
-    const sellerRole = await Role.create({ name: 'SELLER', description: 'Đối tác bán hàng' });
-    const customerRole = await Role.create({ name: 'CUSTOMER', description: 'Khách hàng mua sắm' });
+    const permissions = [];
+    for (const perm of requiredPermissions) {
+      let p = await Permission.findOne({ name: perm.name });
+      if (!p) {
+        p = await Permission.create(perm);
+      }
+      permissions.push(p);
+    }
 
+    const adminRole = await Role.findOne({ name: 'ADMIN' }) || await Role.create({ name: 'ADMIN', description: 'Quản trị viên tối cao' });
+    const managerRole = await Role.findOne({ name: 'MANAGER' }) || await Role.create({ name: 'MANAGER', description: 'Quản lý vận hành' });
+    const sellerRole = await Role.findOne({ name: 'SELLER' }) || await Role.create({ name: 'SELLER', description: 'Đối tác bán hàng' });
+    const customerRole = await Role.findOne({ name: 'CUSTOMER' }) || await Role.create({ name: 'CUSTOMER', description: 'Khách hàng mua sắm' });
+
+    // Link permissions
+    await RolePermission.deleteMany({});
     await RolePermission.insertMany([
       { role_id: adminRole._id, permission_id: permissions[0]._id },
       { role_id: adminRole._id, permission_id: permissions[1]._id },
@@ -116,26 +224,66 @@ const seedFashionData = async () => {
     ]);
 
     console.log('👥 Seeding Users...');
-    const admin = await User.create({
-      full_name: 'UTEShop Admin',
-      email: 'admin@uteshop.vn',
-      password: hashedPassword,
-      status: 'active'
-    });
+    let admin = await User.findOne({ email: 'admin@uteshop.vn' });
+    if (!admin) {
+      admin = await User.create({
+        full_name: 'UTEShop Admin',
+        email: 'admin@uteshop.vn',
+        password: hashedPassword,
+        status: 'active'
+      });
+      await UserRole.create({ user_id: admin._id, role_id: adminRole._id });
+    }
 
-    const manager = await User.create({
-      full_name: 'UTEShop Manager',
-      email: 'manager@uteshop.vn',
-      password: hashedPassword,
-      status: 'active'
-    });
+    let manager = await User.findOne({ email: 'manager@uteshop.vn' });
+    if (!manager) {
+      manager = await User.create({
+        full_name: 'UTEShop Manager',
+        email: 'manager@uteshop.vn',
+        password: hashedPassword,
+        status: 'active'
+      });
+      await UserRole.create({ user_id: manager._id, role_id: managerRole._id });
+    }
 
-    const sellers = await User.insertMany([
-      { full_name: 'Fashion Guru', email: 'fashion@gmail.com', password: hashedPassword, status: 'active' },
-      { full_name: 'Sneaker Head', email: 'sneaker@gmail.com', password: hashedPassword, status: 'active' },
-      { full_name: 'Tech Master', email: 'tech@gmail.com', password: hashedPassword, status: 'active' },
-      { full_name: 'Kids Specialist', email: 'kids@gmail.com', password: hashedPassword, status: 'active' }
-    ]);
+    const sellerEmails = [
+      { email: 'fashion@gmail.com', name: 'Fashion Guru', gst: 'GST-001', bank: 'Vietcombank', accName: 'Fashion Guru', accNum: '0123456789', address: '12 Nguyen Hue, TP.HCM' },
+      { email: 'sneaker@gmail.com', name: 'Sneaker Head', gst: 'GST-002', bank: 'ACB', accName: 'Sneaker Head', accNum: '9876543210', address: '99 Le Loi, Dong Nai' },
+      { email: 'sport@gmail.com', name: 'Sports Specialist', gst: 'GST-003', bank: 'Techcombank', accName: 'Sports Specialist', accNum: '1122334455', address: '50 Vo Van Ngan, Thu Duc' },
+      { email: 'kids@gmail.com', name: 'Kids Specialist', gst: 'GST-004', bank: 'VPBank', accName: 'Kids Specialist', accNum: '5566778899', address: '102 Nguyen Thi Minh Khai, Q3, TP.HCM' },
+      { email: 'unisex@gmail.com', name: 'Streetwear Specialist', gst: 'GST-005', bank: 'MB Bank', accName: 'Streetwear Specialist', accNum: '6677889900', address: '20 Vo Van Ngan, Thu Duc' }
+    ];
+
+    const sellerUsers = {};
+    for (const info of sellerEmails) {
+      let user = await User.findOne({ email: info.email });
+      if (!user) {
+        user = await User.create({
+          full_name: info.name,
+          email: info.email,
+          password: hashedPassword,
+          status: 'active'
+        });
+        await UserRole.create({ user_id: user._id, role_id: sellerRole._id });
+      }
+      sellerUsers[info.email] = user;
+
+      // Ensure SellerProfile exists
+      let profile = await SellerProfile.findOne({ user_id: user._id });
+      if (!profile) {
+        await SellerProfile.create({
+          user_id: user._id,
+          gst_number: info.gst,
+          bank_name: info.bank,
+          bank_account_name: info.accName,
+          bank_account_number: info.accNum,
+          pickup_address: info.address,
+          status: 'active',
+          approved_by: admin._id,
+          approved_at: new Date()
+        });
+      }
+    }
 
     const firstNames = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Huỳnh', 'Phan', 'Vũ', 'Võ', 'Đặng', 'Bùi', 'Đỗ', 'Hồ', 'Ngô', 'Dương', 'Lý'];
     const middleNames = ['Thanh', 'Minh', 'Văn', 'Thị', 'Đức', 'Ngọc', 'Xuân', 'Thu', 'Tuấn', 'Phương', 'Thảo', 'Hải', 'Hiếu', 'Bảo', 'Gia'];
@@ -146,6 +294,28 @@ const seedFashionData = async () => {
       { full_name: 'Le Minh Hang', email: 'hang@gmail.com', password: hashedPassword, status: 'active', coin_balance: 2000, dob: '1999-05-15', gender: 'female' }
     ];
 
+    const customers = [];
+    for (const cInfo of customerData) {
+      let cust = await User.findOne({ email: cInfo.email });
+      if (!cust) {
+        cust = await User.create(cInfo);
+        await UserRole.create({ user_id: cust._id, role_id: customerRole._id });
+        
+        // Add Address
+        await Address.create({
+          user_id: cust._id,
+          label: cInfo.email === 'tung@gmail.com' ? 'Nha rieng' : 'Van phong',
+          recipient_name: cInfo.email === 'tung@gmail.com' ? 'Thanh Tung' : 'Minh Hang',
+          recipient_phone: cInfo.email === 'tung@gmail.com' ? '0901112223' : '0903334445',
+          street_address: cInfo.email === 'tung@gmail.com' ? '456 Le Van Viet, Thu Duc' : '123 Vo Van Ngan, Thu Duc',
+          city: 'TP.HCM',
+          is_default: true
+        });
+      }
+      customers.push(cust);
+    }
+
+    // Generate extra customers
     for (let i = 1; i <= 100; i++) {
       const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
       const mn = middleNames[Math.floor(Math.random() * middleNames.length)];
@@ -155,108 +325,28 @@ const seedFashionData = async () => {
       const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
       const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
       const cleanEmail = slugify(`${fn}-${mn}-${ln}`).replace(/-/g, '');
+      const email = `customer${i}_${cleanEmail}@gmail.com`;
 
-      customerData.push({
-        full_name: `${fn} ${mn} ${ln}`,
-        email: `customer${i}_${cleanEmail}@gmail.com`,
-        password: hashedPassword,
-        status: 'active',
-        coin_balance: Math.floor(Math.random() * 10) * 1000,
-        dob: `${year}-${month}-${day}`,
-        gender: gender
-      });
-    }
-
-    const customers = await User.insertMany(customerData);
-
-    const userRolesData = [
-      { user_id: admin._id, role_id: adminRole._id },
-      { user_id: manager._id, role_id: managerRole._id },
-      { user_id: sellers[0]._id, role_id: sellerRole._id },
-      { user_id: sellers[1]._id, role_id: sellerRole._id },
-      { user_id: sellers[2]._id, role_id: sellerRole._id },
-      { user_id: sellers[3]._id, role_id: sellerRole._id }
-    ];
-
-    for (const c of customers) {
-      userRolesData.push({ user_id: c._id, role_id: customerRole._id });
-    }
-
-    await UserRole.insertMany(userRolesData);
-
-    console.log('📍 Seeding Addresses...');
-    await Address.insertMany([
-      {
-        user_id: customers[0]._id,
-        label: 'Nha rieng',
-        recipient_name: 'Thanh Tung',
-        recipient_phone: '0901112223',
-        street_address: '456 Le Van Viet, Thu Duc',
-        city: 'TP.HCM',
-        is_default: true
-      },
-      {
-        user_id: customers[1]._id,
-        label: 'Van phong',
-        recipient_name: 'Minh Hang',
-        recipient_phone: '0903334445',
-        street_address: '123 Vo Van Ngan, Thu Duc',
-        city: 'TP.HCM',
-        is_default: true
+      let u = await User.findOne({ email });
+      if (!u) {
+        u = await User.create({
+          full_name: `${fn} ${mn} ${ln}`,
+          email: email,
+          password: hashedPassword,
+          status: 'active',
+          coin_balance: Math.floor(Math.random() * 10) * 1000,
+          dob: `${year}-${month}-${day}`,
+          gender: gender
+        });
+        await UserRole.create({ user_id: u._id, role_id: customerRole._id });
       }
-    ]);
+      customers.push(u);
+    }
 
     console.log('🏬 Seeding Seller Profiles & Shops...');
-    await SellerProfile.insertMany([
-      {
-        user_id: sellers[0]._id,
-        gst_number: 'GST-001',
-        bank_name: 'Vietcombank',
-        bank_account_name: 'Fashion Guru',
-        bank_account_number: '0123456789',
-        pickup_address: '12 Nguyen Hue, TP.HCM',
-        status: 'active',
-        approved_by: admin._id,
-        approved_at: new Date()
-      },
-      {
-        user_id: sellers[1]._id,
-        gst_number: 'GST-002',
-        bank_name: 'ACB',
-        bank_account_name: 'Sneaker Head',
-        bank_account_number: '9876543210',
-        pickup_address: '99 Le Loi, Dong Nai',
-        status: 'active',
-        approved_by: admin._id,
-        approved_at: new Date()
-      },
-      {
-        user_id: sellers[2]._id,
-        gst_number: 'GST-003',
-        bank_name: 'Techcombank',
-        bank_account_name: 'Tech Master',
-        bank_account_number: '1122334455',
-        pickup_address: '50 Vo Van Ngan, Thu Duc',
-        status: 'active',
-        approved_by: admin._id,
-        approved_at: new Date()
-      },
-      {
-        user_id: sellers[3]._id,
-        gst_number: 'GST-004',
-        bank_name: 'VPBank',
-        bank_account_name: 'Kids Specialist',
-        bank_account_number: '5566778899',
-        pickup_address: '102 Nguyen Thi Minh Khai, Q3, TP.HCM',
-        status: 'active',
-        approved_by: admin._id,
-        approved_at: new Date()
-      }
-    ]);
-
     const fashionShop = await Shop.create({
       name: 'GUMAC Fashion Store',
-      owner_user_id: sellers[0]._id,
+      owner_user_id: sellerUsers['fashion@gmail.com']._id,
       slug: 'gumac-fashion-store',
       address: 'TP.HCM',
       phone: '19001234',
@@ -272,7 +362,7 @@ const seedFashionData = async () => {
 
     const sneakerShop = await Shop.create({
       name: 'Bitis Hunter Official',
-      owner_user_id: sellers[1]._id,
+      owner_user_id: sellerUsers['sneaker@gmail.com']._id,
       slug: 'bitis-hunter-official',
       address: 'Dong Nai',
       phone: '19005678',
@@ -287,14 +377,14 @@ const seedFashionData = async () => {
     });
 
     const sportsShop = await Shop.create({
-      name: 'Sports & Tech World',
-      owner_user_id: sellers[2]._id,
-      slug: 'sports-tech-world',
+      name: 'Decathlon Sportswear',
+      owner_user_id: sellerUsers['sport@gmail.com']._id,
+      slug: 'decathlon-sportswear',
       address: 'TP.HCM',
       phone: '19009999',
       logo_url: 'https://res.cloudinary.com/dmxxo6wgl/image/upload/v1778635484/images_cheyul.jpg',
       banner_url: 'https://res.cloudinary.com/dmxxo6wgl/image/upload/v1778635484/images_cheyul.jpg',
-      description: 'Thế giới đồ thể thao, thời trang unisex và phụ kiện công nghệ chính hãng',
+      description: 'Thương hiệu đồ thể thao chuyên nghiệp và đa năng cho mọi lứa tuổi',
       followers: 42000,
       response_rate: 92,
       joined_at: new Date('2023-10-10'),
@@ -303,14 +393,14 @@ const seedFashionData = async () => {
     });
 
     const kidsShop = await Shop.create({
-      name: 'Kids & Baby Kingdom',
-      owner_user_id: sellers[3]._id,
-      slug: 'kids-baby-kingdom',
+      name: 'Baby Care Corner',
+      owner_user_id: sellerUsers['kids@gmail.com']._id,
+      slug: 'baby-care-corner',
       address: 'TP.HCM',
       phone: '19008888',
       logo_url: imageUrl,
       banner_url: imageUrl,
-      description: 'Thiên đường thời trang và phụ kiện cao cấp dành cho mẹ và bé',
+      description: 'Cửa hàng chuyên cung cấp quần áo và phụ kiện an toàn, cao cấp dành cho trẻ em',
       followers: 64000,
       response_rate: 98,
       joined_at: new Date('2024-03-20'),
@@ -318,146 +408,189 @@ const seedFashionData = async () => {
       product_count: 0
     });
 
+    const unisexShop = await Shop.create({
+      name: 'Coolmate Streetwear',
+      owner_user_id: sellerUsers['unisex@gmail.com']._id,
+      slug: 'coolmate-streetwear',
+      address: 'TP.HCM',
+      phone: '19007777',
+      logo_url: imageUrl,
+      banner_url: imageUrl,
+      description: 'Thời trang nam và unisex năng động, tối giản, chất lượng cao',
+      followers: 78000,
+      response_rate: 97,
+      joined_at: new Date('2025-01-10'),
+      response_time: 'within minutes',
+      product_count: 0
+    });
+
+    const shopsMap = {
+      women: fashionShop,
+      shoes: sneakerShop,
+      sports: sportsShop,
+      kids: kidsShop,
+      men: unisexShop
+    };
+
     await SellerWallet.insertMany([
       { shop_id: fashionShop._id, total_balance: 15000000, pending_balance: 5000000, available_balance: 10000000 },
       { shop_id: sneakerShop._id, total_balance: 8000000, pending_balance: 3000000, available_balance: 5000000 },
       { shop_id: sportsShop._id, total_balance: 5000000, pending_balance: 1000000, available_balance: 4000000 },
-      { shop_id: kidsShop._id, total_balance: 12000000, pending_balance: 2000000, available_balance: 10000000 }
+      { shop_id: kidsShop._id, total_balance: 12000000, pending_balance: 2000000, available_balance: 10000000 },
+      { shop_id: unisexShop._id, total_balance: 9000000, pending_balance: 1500000, available_balance: 7500000 }
     ]);
 
-    console.log('📂 Seeding 3-Level Categories & Products from Cloudinary Data...');
-    
+    console.log('📂 Seeding 2-Level Categories & Products from DATA Folder...');
+
+    const productsFiles = scanDataDirectory();
+    console.log(`Found ${productsFiles.length} products.json files in DATA.`);
+
+    const categoryCache = {};
+    const allProducts = [];
     const shopProductCounts = {
       [fashionShop._id.toString()]: 0,
       [sneakerShop._id.toString()]: 0,
       [sportsShop._id.toString()]: 0,
-      [kidsShop._id.toString()]: 0
+      [kidsShop._id.toString()]: 0,
+      [unisexShop._id.toString()]: 0
     };
 
     let p1, p2, p3, v1, v2, v3;
     let catWomen;
-    let allProducts = [];
 
-    for (const topKey of Object.keys(cloudinaryData)) {
-      let currentShop;
-      let catName;
-      if (topKey === 'WOMEN') { currentShop = fashionShop; catName = 'Women'; }
-      else if (topKey === 'MEN') { currentShop = sneakerShop; catName = 'Men'; }
-      else if (topKey === 'SPORTS & UNISEX') { currentShop = sportsShop; catName = 'Sports & Unisex'; }
-      else { currentShop = kidsShop; catName = 'Kids & Baby'; }
+    for (const fileInfo of productsFiles) {
+      const { level1Name, level2Name, filePath } = fileInfo;
 
-      const level1Cat = await Category.create({ name: catName, slug: slugify(topKey) });
-      if (topKey === 'WOMEN') catWomen = level1Cat;
+      // 1. Level 1 Category
+      const l1Key = level1Name.toUpperCase().trim();
+      let l1Cat = categoryCache[l1Key];
+      if (!l1Cat) {
+        l1Cat = await Category.findOne({ slug: slugify(level1Name) });
+        if (!l1Cat) {
+          l1Cat = await Category.create({ name: level1Name, slug: slugify(level1Name) });
+        }
+        categoryCache[l1Key] = l1Cat;
+      }
 
-      const subKeys = Object.keys(cloudinaryData[topKey]);
-      for (const subKey of subKeys) {
-        const parts = subKey.split('/');
-        const level2Name = parts[0];
-        const level3Name = parts[1];
+      if (l1Key === 'WOMEN') {
+        catWomen = l1Cat;
+      }
 
-        let level2Cat = await Category.findOne({ slug: slugify(`${topKey}-${level2Name}`) });
-        if (!level2Cat) {
-          level2Cat = await Category.create({ name: level2Name, slug: slugify(`${topKey}-${level2Name}`), parent_id: level1Cat._id });
+      // 2. Level 2 Category
+      const l2Key = `${l1Key}/${level2Name.toUpperCase().trim()}`;
+      let l2Cat = categoryCache[l2Key];
+      if (!l2Cat) {
+        const l2Slug = slugify(`${level1Name}-${level2Name}`);
+        l2Cat = await Category.findOne({ slug: l2Slug });
+        if (!l2Cat) {
+          l2Cat = await Category.create({ name: level2Name, slug: l2Slug, parent_id: l1Cat._id });
+        }
+        categoryCache[l2Key] = l2Cat;
+      }
+
+      // 3. Load product data
+      const rawData = fs.readFileSync(filePath, 'utf8');
+      const productsData = JSON.parse(rawData);
+      console.log(`Parsing ${productsData.length} products from ${level1Name}/${level2Name}...`);
+
+      for (let i = 0; i < productsData.length; i++) {
+        const item = productsData[i];
+
+        let cleanName = (item.ten_san_pham || '').replace(/^\(Video Ảnh Thật \)\s*/i, '').trim();
+        if (!cleanName) {
+          cleanName = `${level2Name} Product ${i + 1}`;
         }
 
-        let level3Cat = await Category.findOne({ slug: slugify(`${topKey}-${level2Name}-${level3Name}`) });
-        if (!level3Cat) {
-          level3Cat = await Category.create({ name: level3Name, slug: slugify(`${topKey}-${level2Name}-${level3Name}`), parent_id: level2Cat._id });
+        const pSlug = slugify(`${cleanName}-${level1Name.substr(0, 3)}-${i + 1}-${Date.now().toString().substr(-4)}-${Math.random().toString(36).substr(2, 3)}`);
+
+        const basePrice = item.gia_goc || 200000;
+        const sellingPrice = item.gia_hien_tai || basePrice;
+
+        const targetShop = getShopForProduct(level1Name, level2Name, shopsMap);
+
+        const product = await Product.create({
+          shop_id: targetShop._id,
+          category_id: l2Cat._id,
+          name: cleanName,
+          slug: pSlug,
+          description: cleanHtmlImg(item.mo_ta_san_pham) || `<p>Sản phẩm <strong>${cleanName}</strong> chất lượng cao chính hãng từ ${targetShop.name}.</p>`,
+          mrp_price: basePrice,
+          selling_price: sellingPrice,
+          sku: `SKU-${level1Name.substr(0, 3).toUpperCase()}-${level2Name.substr(0, 3).toUpperCase()}-${i + 1}-${Math.floor(Math.random() * 1000)}`,
+          approval_status: 'approved'
+        });
+
+        // Add Product Media
+        const mediaUrls = [];
+        if (item.anh_thumbnail && item.anh_thumbnail.link_online) {
+          mediaUrls.push(item.anh_thumbnail.link_online);
         }
 
-        const items = cloudinaryData[topKey][subKey];
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          let cleanName = item.local_filename.replace(/\.[^/.]+$/, "").replace(/^\(Video Ảnh Thật \)\s*/i, "").trim();
-          if (!cleanName) cleanName = `${level3Name} Premium ${i + 1}`;
-
-          const pSlug = slugify(`${cleanName}-${topKey.substr(0,3)}-${i + 1}-${Date.now().toString().substr(-4)}-${Math.random().toString(36).substr(2, 3)}`);
-          const basePrice = Math.floor(Math.random() * 500000) + 350000;
-          // Tạo một số sản phẩm có mức giảm giá cực sâu (từ 40% đến 80%) để phục vụ tab Biggest Discounts
-          let discountRate = 0.10 + Math.random() * 0.15; // 10% - 25% default
-          if (i % 3 === 0) {
-            discountRate = 0.40 + Math.random() * 0.40; // 40% - 80% biggest discount
-          }
-          const sellingPrice = Math.floor(basePrice * (1 - discountRate));
-
-          const product = await Product.create({
-            shop_id: currentShop._id,
-            category_id: level3Cat._id,
-            name: cleanName,
-            slug: pSlug,
-            description: `<p>Sản phẩm <strong>${cleanName}</strong> chính hãng thuộc bộ sưu tập ${level3Name} của ${currentShop.name}. Được thiết kế với phong cách hiện đại, sử dụng chất liệu cao cấp mang lại sự thoải mái, bền bỉ và sang trọng cho người sử dụng.</p><ul><li>Chất liệu: Cao cấp, thoáng mát</li><li>Độ bền cao, đường may tỉ mỉ</li><li>Xuất xứ: Việt Nam</li><li>Bảo hành: Chính hãng từ nhà bán hàng</li></ul>`,
-            mrp_price: basePrice,
-            selling_price: sellingPrice,
-            sku: `SKU-${topKey.substr(0,3).toUpperCase()}-${level3Name.substr(0,3).toUpperCase()}-${i + 1}-${Math.floor(Math.random()*1000)}`,
-            approval_status: 'approved',
-            view_count: Math.floor(Math.random() * 800) + 50
+        if (item.anh_chi_tiet && Array.isArray(item.anh_chi_tiet)) {
+          item.anh_chi_tiet.forEach(detail => {
+            if (detail && detail.link_online && !mediaUrls.includes(detail.link_online)) {
+              mediaUrls.push(detail.link_online);
+            }
           });
+        }
 
+        if (mediaUrls.length === 0) {
+          mediaUrls.push(imageUrl);
+        }
+
+        for (let mIdx = 0; mIdx < mediaUrls.length; mIdx++) {
           await ProductMedia.create({
             product_id: product._id,
             media_type: 'image',
-            media_url: item.cloudinary_url,
-            sort_order: 1
+            media_url: mediaUrls[mIdx],
+            sort_order: mIdx + 1
           });
-
-          let sizes = ['S', 'M', 'L', 'XL'];
-          let colors = ['Đen', 'Trắng', 'Xanh Navy', 'Be', 'Xám', 'Hồng', 'Đỏ rượu'];
-
-          const l2 = level2Name.toLowerCase();
-          const l3 = level3Name.toLowerCase();
-
-          if (l2.includes('footwear') || l3.includes('giày') || l3.includes('sneaker') || l3.includes('boot') || l3.includes('sandal')) {
-            if (topKey === 'KIDS & BABY') {
-              sizes = ['28', '30', '32'];
-              colors = ['Đen', 'Trắng', 'Xanh Navy', 'Hồng phấn'];
-            } else {
-              sizes = ['38', '39', '40', '41', '42'];
-              colors = ['Đen', 'Trắng', 'Xám', 'Be'];
-            }
-          } else if (topKey === 'KIDS & BABY' && (l2.includes('baby') || l3.includes('baby') || l2.includes('bé'))) {
-            sizes = ['0-6M', '6-12M', '12-18M', '18-24M'];
-            colors = ['Trắng sữa', 'Vàng nhạt', 'Xanh ngọc', 'Hồng phấn'];
-          } else if (l2.includes('accessories') || l2.includes('tech') || l3.includes('túi') || l3.includes('kính') || l3.includes('mũ') || l3.includes('đồng hồ') || l3.includes('balo')) {
-            sizes = ['Tiêu chuẩn', 'Free size'];
-            colors = ['Đen bóng', 'Bạc sang trọng', 'Trắng tinh khôi', 'Be thời thượng'];
-          }
-
-          // Pick 2 random sizes and 2 random colors to make 4 distinct variants
-          const shuffledSizes = [...sizes].sort(() => 0.5 - Math.random()).slice(0, 2);
-          const shuffledColors = [...colors].sort(() => 0.5 - Math.random()).slice(0, 2);
-
-          const variantDocs = [];
-          let varIndex = 1;
-          for (const s of shuffledSizes) {
-            for (const c of shuffledColors) {
-              variantDocs.push({
-                product_id: product._id,
-                attributes: { size: s, color: c },
-                stock_quantity: Math.floor(Math.random() * 50) + 10,
-                additional_price: varIndex === 1 ? 0 : Math.floor(Math.random() * 4) * 10000,
-                sku: `${product.sku}-VAR-${varIndex}`
-              });
-              varIndex++;
-            }
-          }
-
-          const createdVariants = await ProductVariant.insertMany(variantDocs);
-          const variant = createdVariants[0];
-
-          await ProductApproval.create({
-            product_id: product._id,
-            approver_id: manager._id,
-            action: 'approved',
-            reason: 'System reseeding approval'
-          });
-
-          shopProductCounts[currentShop._id.toString()]++;
-          allProducts.push({ product, variant, shop: currentShop, mediaUrl: item.cloudinary_url });
-
-          if (!p1 && topKey === 'WOMEN') { p1 = product; v1 = variant; }
-          else if (!p2 && topKey === 'MEN') { p2 = product; v3 = variant; }
-          else if (!p3 && topKey === 'WOMEN' && product._id.toString() !== p1?._id.toString()) { p3 = product; v2 = variant; }
         }
+
+        // Add Product Variants
+        const variantDocs = [];
+        if (item.bien_the && Array.isArray(item.bien_the) && item.bien_the.length > 0) {
+          let varIndex = 1;
+          for (const rawVar of item.bien_the) {
+            const normalizedAttrs = normalizeAttributes(rawVar.thuoc_tinh);
+            if (!normalizedAttrs.color) normalizedAttrs.color = 'Tiêu chuẩn';
+            if (!normalizedAttrs.size) normalizedAttrs.size = 'Tiêu chuẩn';
+
+            variantDocs.push({
+              product_id: product._id,
+              attributes: normalizedAttrs,
+              stock_quantity: rawVar.stock_quantity || Math.floor(Math.random() * 50) + 10,
+              additional_price: rawVar.chenh_lech_gia || (rawVar.gia_bien_the - sellingPrice) || 0,
+              sku: `${product.sku}-VAR-${varIndex}`
+            });
+            varIndex++;
+          }
+        } else {
+          variantDocs.push({
+            product_id: product._id,
+            attributes: { size: 'Tiêu chuẩn', color: 'Tiêu chuẩn' },
+            stock_quantity: Math.floor(Math.random() * 50) + 10,
+            additional_price: 0,
+            sku: `${product.sku}-VAR-1`
+          });
+        }
+
+        const createdVariants = await ProductVariant.insertMany(variantDocs);
+        const variant = createdVariants[0];
+
+        await ProductApproval.create({
+          product_id: product._id,
+          approver_id: manager._id,
+          action: 'approved',
+          reason: 'System reseeding approval'
+        });
+
+        shopProductCounts[targetShop._id.toString()]++;
+        allProducts.push({ product, variant, shop: targetShop, mediaUrl: mediaUrls[0] });
+
+        if (!p1 && level1Name === 'WOMEN') { p1 = product; v1 = variant; }
+        else if (!p2 && level1Name === 'MEN') { p2 = product; v3 = variant; }
+        else if (!p3 && level1Name === 'WOMEN' && product._id.toString() !== p1?._id.toString()) { p3 = product; v2 = variant; }
       }
     }
 
@@ -481,12 +614,11 @@ const seedFashionData = async () => {
       value: 20
     });
 
-    const campaignTargetsToInsert = allProducts.slice(0, 10).map(item => ({
+    await CampaignTarget.create({
       campaign_id: camp._id,
-      product_id: item.product._id,
+      product_id: p1._id,
       target_type: 'featured'
-    }));
-    await CampaignTarget.insertMany(campaignTargetsToInsert);
+    });
 
     const coupon = await Coupon.create({
       code: 'FASHION20',
@@ -572,9 +704,9 @@ const seedFashionData = async () => {
     });
 
     await OrderStatusHistory.insertMany([
-      { order_id: order1._id, status: 'confirmed', note: 'Order confirmed', updated_by: sellers[0]._id },
-      { order_id: order1._id, status: 'shipped', note: 'Shipped by partner', updated_by: sellers[0]._id },
-      { order_id: order1._id, status: 'delivered', note: 'Delivered', updated_by: sellers[0]._id },
+      { order_id: order1._id, status: 'confirmed', note: 'Order confirmed', updated_by: sellerUsers['fashion@gmail.com']._id },
+      { order_id: order1._id, status: 'shipped', note: 'Shipped by partner', updated_by: sellerUsers['fashion@gmail.com']._id },
+      { order_id: order1._id, status: 'delivered', note: 'Delivered', updated_by: sellerUsers['fashion@gmail.com']._id },
       { order_id: order2._id, status: 'canceled', note: 'Canceled by user', updated_by: customers[0]._id }
     ]);
 
@@ -585,13 +717,12 @@ const seedFashionData = async () => {
       cancelled_at: new Date()
     });
 
-    // === Bulk Order Seeding: Real sold data for products ===
+    // === Bulk Order Seeding ===
     console.log('📦 Seeding bulk orders for realistic sold counts...');
-    const allShops = [fashionShop, sneakerShop, sportsShop, kidsShop];
+    const allShops = [fashionShop, sneakerShop, sportsShop, kidsShop, unisexShop];
     const bulkOrderItems = [];
-    let orderCodeCounter = 3; // ORD-2026-0001 and 0002 already used
+    let orderCodeCounter = 3;
 
-    // Group products by shop for order creation
     const productsByShop = {};
     for (const item of allProducts) {
       const shopId = item.shop._id.toString();
@@ -599,7 +730,6 @@ const seedFashionData = async () => {
       productsByShop[shopId].push(item);
     }
 
-    // Create ~200 delivered orders spread across products
     const numBulkOrders = 200;
     for (let i = 0; i < numBulkOrders; i++) {
       const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
@@ -608,8 +738,7 @@ const seedFashionData = async () => {
       const shopProducts = productsByShop[shopId];
       if (!shopProducts || shopProducts.length === 0) continue;
 
-      // Pick 1-3 random products from this shop for this order
-      const numItems = Math.floor(Math.random() * 3) + 1;
+      const numItems = Math.min(shopProducts.length, Math.floor(Math.random() * 3) + 1);
       const selectedProducts = [];
       for (let j = 0; j < numItems; j++) {
         const randProd = shopProducts[Math.floor(Math.random() * shopProducts.length)];
@@ -650,7 +779,7 @@ const seedFashionData = async () => {
       });
 
       for (const sp of selectedProducts) {
-        const qty = Math.floor(Math.random() * 5) + 1; // 1-5 items
+        const qty = Math.floor(Math.random() * 5) + 1;
         bulkOrderItems.push({
           order_id: bulkOrder._id,
           product_id: sp.product._id,
@@ -667,7 +796,6 @@ const seedFashionData = async () => {
       await OrderItem.insertMany(bulkOrderItems);
     }
     console.log(`✅ Created ${numBulkOrders} delivered orders with ${bulkOrderItems.length} order items`);
-    // === End Bulk Order Seeding ===
 
     console.log('🛒 Seeding Carts & Wishlist...');
     const cart = await Cart.create({ user_id: customers[1]._id });
@@ -801,10 +929,9 @@ const seedFashionData = async () => {
       }
     ];
 
-    // Add random reviews for the first 100 products in allProducts using our 100 customers
     for (let i = 0; i < Math.min(allProducts.length, 100); i++) {
       const prod = allProducts[i].product;
-      const numReviews = Math.floor(Math.random() * 3) + 1; // 1 to 3 reviews per product
+      const numReviews = Math.floor(Math.random() * 3) + 1;
       for (let j = 0; j < numReviews; j++) {
         const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
         const template = reviewTemplates[Math.floor(Math.random() * reviewTemplates.length)];
@@ -877,7 +1004,7 @@ const seedFashionData = async () => {
     });
 
     console.log('🖼️ Seeding CMS...');
-    const banner = await Banner.create({
+    await Banner.create({
       title: 'Summer Sale',
       image_url: imageUrl,
       link: '/deals',
@@ -898,25 +1025,82 @@ const seedFashionData = async () => {
       sort_order: 1
     });
 
-    await Post.create({
-      title: 'Fashion Tips 2026',
-      slug: 'fashion-tips-2026',
-      content: 'Simple styling tips',
-      author_id: admin._id,
-      status: 'published'
-    });
-
-    await StaticPage.create({
-      title: 'FAQ',
-      slug: 'faq',
-      content: 'Common questions',
-      page_type: 'faq'
-    });
+    console.log('❤️ Seeding Wishlist...');
+    await Wishlist.insertMany([
+      { user_id: customers[0]._id, product_id: p1._id },
+      { user_id: customers[0]._id, product_id: p2._id },
+      { user_id: customers[0]._id, product_id: p3._id }
+    ]);
 
     console.log('📣 Seeding Notifications & Coins...');
     await Notification.insertMany([
-      { user_id: customers[0]._id, title: 'Order delivered', content: 'Your order has been delivered.', type: 'order' },
-      { user_id: customers[1]._id, title: 'New promotion', content: 'Use FASHION20 to save more.', type: 'promotion' }
+      {
+        user_id: customers[0]._id,
+        title: 'Order #UTE99283 is out for delivery',
+        content: 'Your package is being delivered by our courier. Please stay reachable at your phone number.',
+        detailContent: 'Good news! Your order **#UTE99283** has left our sorting facility and is currently with our delivery partner.\n\nOur courier will attempt to deliver your package today between **09:00 AM and 06:00 PM**. Please ensure someone is available at the shipping address to receive the items.',
+        type: 'order',
+        category: 'Orders',
+        is_read: false,
+        date: '2 MINS AGO',
+        orderSummary: {
+          name: p1.name,
+          qty: 1,
+          variant: 'Tiêu chuẩn',
+          image: imageUrl
+        },
+        link: '/profile'
+      },
+      {
+        user_id: customers[0]._id,
+        title: 'Flash Sale: Up to 70% OFF!',
+        content: 'The biggest sale of the season is here. Grab your favorite academic outfits before they\'re gone.',
+        detailContent: 'Get ready for the ultimate academic shopping experience! Enjoy up to **70% OFF** on premium hoodies, backpacks, and smart gadgets.\n\nUse code **FLASH70** at checkout. Hurry, offer valid only for the next 24 hours!',
+        type: 'promotion',
+        category: 'Promotions',
+        is_read: true,
+        date: '3 HOURS AGO',
+        link: '/search?category=clothing'
+      },
+      {
+        user_id: customers[0]._id,
+        title: 'Security Alert: New Login',
+        content: 'A new login was detected from a Chrome browser on Windows in Ho Chi Minh City.',
+        detailContent: 'We detected a new login to your UTEShop account from a new device/location.\n\n**Device:** Chrome on Windows\n**Location:** Ho Chi Minh City, Vietnam\n**IP Address:** 113.166.x.x\n\nIf this was you, you can safely ignore this alert. If you did not authorize this login, please change your password immediately.',
+        type: 'system',
+        category: 'System',
+        is_read: false,
+        date: 'YESTERDAY',
+        link: '/profile'
+      },
+      {
+        user_id: customers[0]._id,
+        title: 'Order #UTE99210 Delivered',
+        content: 'Your order has been successfully delivered. We hope you enjoy your new items!',
+        detailContent: 'Your order **#UTE99210** has been marked as delivered by our shipping partner.\n\nWe hope you love your new academic gear! Please take a moment to confirm receipt and leave a review for the products to earn UTEShop coins.',
+        type: 'order',
+        category: 'Orders',
+        is_read: true,
+        date: 'OCT 24',
+        orderSummary: {
+          name: p2.name,
+          qty: 2,
+          variant: 'Tiêu chuẩn',
+          image: imageUrl
+        },
+        link: '/profile'
+      },
+      {
+        user_id: customers[1]._id,
+        title: 'Welcome to UTEShop!',
+        content: 'Experience the premium academic marketplace. Enjoy your shopping!',
+        detailContent: 'Welcome to UTEShop! We are excited to have you on board. Explore our catalog for the best academic collections.',
+        type: 'system',
+        category: 'System',
+        is_read: false,
+        date: 'JUST NOW',
+        link: '/search'
+      }
     ]);
 
     await CoinTransaction.create({
@@ -933,14 +1117,6 @@ const seedFashionData = async () => {
       coupon_id: coupon._id,
       user_id: customers[0]._id,
       order_id: order1._id
-    });
-
-    await OTP.create({
-      email: 'tung@gmail.com',
-      otp_code: '123456',
-      otp_type: 'login',
-      expired_at: new Date(Date.now() + 5 * 60 * 1000),
-      is_verified: true
     });
 
     await AuditLog.create({

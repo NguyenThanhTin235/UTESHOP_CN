@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const OTP = require('../models/OTP');
 const User = require('../models/User');
 const sendEmail = require('../utils/mail');
+const { getOTPTemplate, getAlertTemplate } = require('../utils/emailTemplates');
 const UserRole = require('../models/UserRole');
 const Role = require('../models/Role');
 
@@ -57,25 +58,69 @@ const verifyOTP = async (email, otpCode, type) => {
 };
 
 /**
+ * Send Login Alert Email
+ */
+const sendLoginAlertEmail = (user, ipAddress, deviceInfo) => {
+  if (user.security_alerts?.login_alerts !== false) {
+    const parseUA = (userAgent) => {
+      if (!userAgent) return 'Unknown Device';
+      let os = 'Unknown OS';
+      let browser = 'Unknown Browser';
+      
+      if (userAgent.includes('Windows')) os = 'Windows';
+      else if (userAgent.includes('Macintosh') || userAgent.includes('Mac OS')) os = 'macOS';
+      else if (userAgent.includes('iPhone')) os = 'iPhone';
+      else if (userAgent.includes('iPad')) os = 'iPad';
+      else if (userAgent.includes('Android')) os = 'Android';
+      else if (userAgent.includes('Linux')) os = 'Linux';
+      
+      if (userAgent.includes('Edg/')) browser = 'Edge';
+      else if (userAgent.includes('Chrome') && !userAgent.includes('Edg/')) browser = 'Chrome';
+      else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) browser = 'Safari';
+      else if (userAgent.includes('Firefox')) browser = 'Firefox';
+      else if (userAgent.includes('Opera') || userAgent.includes('OPR/')) browser = 'Opera';
+      
+      return `${browser} on ${os}`;
+    };
+
+    const device = parseUA(deviceInfo);
+    const time = new Date().toLocaleString('en-US');
+    const message = `Hello ${user.full_name},\n\nYour UTEShop account was successfully logged in from a new device/location.\nTime: ${time}\nDevice: ${device}\nIP Address: ${ipAddress}\n\nBest regards,\nUTEShop Support Team`;
+    const html = getAlertTemplate(
+      'New Login Detected',
+      `Hello ${user.full_name}, we detected a login to your account from a new device or location.`,
+      [
+        { label: 'Time', value: time },
+        { label: 'Device', value: device },
+        { label: 'IP Address', value: ipAddress }
+      ],
+      'red',
+      true
+    );
+
+    sendEmail({
+      email: user.email,
+      subject: '[UTEShop] Security Alert: New Login Detected',
+      message,
+      html
+    }).catch(err => console.error('Failed to send login alert email:', err));
+  }
+};
+
+/**
  * Send OTP via Email (for Forgot Password)
  */
 const sendOTPEmail = async (email, otpCode) => {
   try {
     const message = `Your password reset OTP code is: ${otpCode}. It is valid for 10 minutes.`;
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; padding: 20px; border-radius: 10px;">
-        <h2 style="color: #2c3e50; text-align: center;">Verify Your UTEShop Account</h2>
-        <p>Hi there,</p>
-        <p>You have requested to reset your UTEShop password. Here is your OTP code:</p>
-        <div style="background-color: #f8f9fa; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #e74c3c; border-radius: 5px; margin: 20px 0;">
-          ${otpCode}
-        </div>
-        <p>This code is valid for <b>10 minutes</b>. Please do not share this code with anyone.</p>
-        <p>If you did not make this request, please ignore this email.</p>
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="font-size: 12px; color: #7f8c8d; text-align: center;">This is an automated email, please do not reply.</p>
-      </div>
-    `;
+    const html = getOTPTemplate(
+      'Password Reset Request',
+      'We received a request to reset your password for your UTEShop account. Please use the verification code below to reset your password.',
+      otpCode,
+      10,
+      'If you did not request a password reset, please safely ignore this email.',
+      'red'
+    );
 
     await sendEmail({
       email,
@@ -93,7 +138,7 @@ const sendOTPEmail = async (email, otpCode) => {
 /**
  * Authenticate User (Login)
  */
-const authenticate = async (email, password) => {
+const authenticate = async (email, password, ipAddress, deviceInfo) => {
   const user = await User.findOne({ email });
 
   if (!user) {
@@ -130,6 +175,38 @@ const authenticate = async (email, password) => {
   user.lockout_until = null;
   await user.save();
 
+  // Kiểm tra 2FA
+  if (user.two_factor_enabled) {
+    const otpCode = generateOTP();
+    const expiredAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    await OTP.create({
+      email: user.email,
+      otp_code: otpCode,
+      otp_type: '2fa',
+      expired_at: expiredAt
+    });
+
+    const message = `Your UTEShop 2FA verification code is: ${otpCode}. Valid for 5 minutes.`;
+    const html = getOTPTemplate(
+      'Two-Factor Auth Verification',
+      'A login request was detected for your account. Please use the verification code below to proceed with two-factor authentication.',
+      otpCode,
+      5,
+      'If you did not make this request, please ignore this email.',
+      'red'
+    );
+
+    await sendEmail({
+      email: user.email,
+      subject: '[UTEShop] 2FA Verification Code',
+      message,
+      html
+    });
+
+    return { require2Fa: true, email: user.email };
+  }
+
   const roleName = await getUserRole(user._id, user.role || 'customer');
 
   const token = jwt.sign(
@@ -137,6 +214,8 @@ const authenticate = async (email, password) => {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE || '7d' }
   );
+
+
 
   const roleRedirects = { admin: '/admin/', manager: '/manager/', seller: '/seller/', vendor: '/seller/', customer: '/' };
   const redirectUrl = roleRedirects[roleName] || '/';
@@ -156,6 +235,56 @@ const authenticate = async (email, password) => {
     createdAt: userObj.createdAt,
     updatedAt: userObj.updatedAt
   };
+
+  sendLoginAlertEmail(user, ipAddress, deviceInfo);
+
+  return { token, user: userData, redirectUrl };
+};
+
+/**
+ * Verify 2FA code and log in
+ */
+const verify2FA = async (email, otpCode, ipAddress, deviceInfo) => {
+  const isOtpValid = await verifyOTP(email, otpCode, '2fa');
+  if (!isOtpValid) {
+    throw new Error('Invalid or expired 2FA verification code');
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const roleName = await getUserRole(user._id, user.role || 'customer');
+
+  const token = jwt.sign(
+    { id: user._id, role: roleName },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE || '7d' }
+  );
+
+
+
+  const roleRedirects = { admin: '/admin/', manager: '/manager/', seller: '/seller/', vendor: '/seller/', customer: '/' };
+  const redirectUrl = roleRedirects[roleName] || '/';
+
+  const userObj = user.toObject();
+  const userData = {
+    id: userObj._id,
+    full_name: userObj.full_name,
+    email: userObj.email,
+    phone: userObj.phone || null,
+    dob: userObj.dob || null,
+    gender: userObj.gender || null,
+    role: roleName,
+    avatar_url: userObj.avatar_url || null,
+    status: userObj.status,
+    coin_balance: userObj.coin_balance,
+    createdAt: userObj.createdAt,
+    updatedAt: userObj.updatedAt
+  };
+
+  sendLoginAlertEmail(user, ipAddress, deviceInfo);
 
   return { token, user: userData, redirectUrl };
 };
@@ -183,19 +312,14 @@ const sendRegistrationOTP = async (emailInput) => {
   });
 
   const message = `Your OTP code is: ${otpCode}. Valid for 5 minutes.`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-      <h2 style="color: #007bff; text-align: center;">Verify Your UTEShop Registration</h2>
-      <p>Hi there,</p>
-      <p>Thank you for registering with UTEShop. Here is your OTP code:</p>
-      <div style="font-size: 24px; font-weight: bold; color: #333; text-align: center; padding: 15px; background: #f4f4f4; border-radius: 5px; letter-spacing: 5px;">
-        ${otpCode}
-      </div>
-      <p style="color: #666; font-size: 14px; text-align: center;">This code will expire in 5 minutes.</p>
-      <hr>
-      <p style="font-size: 12px; color: #999; text-align: center;">If you did not request this code, please ignore this email.</p>
-    </div>
-  `;
+  const html = getOTPTemplate(
+    'Verify Your Registration',
+    'Thank you for registering with UTEShop. Please use the verification code below to complete your registration.',
+    otpCode,
+    5,
+    'If you did not request this code, please ignore this email.',
+    'green'
+  );
 
   await sendEmail({
     email,
@@ -282,7 +406,7 @@ const registerUser = async (userData) => {
 /**
  * Social Authenticate (Google/Facebook)
  */
-const socialAuthenticate = async (userData) => {
+const socialAuthenticate = async (userData, ipAddress, deviceInfo) => {
   const { email, full_name, avatar_url, provider, provider_id } = userData;
 
   let user = await User.findOne({ email });
@@ -313,6 +437,8 @@ const socialAuthenticate = async (userData) => {
     { expiresIn: process.env.JWT_EXPIRE || '7d' }
   );
 
+
+
   const userObj = user.toObject();
   const returnUserData = {
     id: userObj._id,
@@ -327,6 +453,8 @@ const socialAuthenticate = async (userData) => {
     createdAt: userObj.createdAt,
   };
 
+  sendLoginAlertEmail(user, ipAddress, deviceInfo);
+
   return { token, user: returnUserData };
 };
 
@@ -338,5 +466,6 @@ module.exports = {
   authenticate,
   sendRegistrationOTP,
   registerUser,
-  socialAuthenticate
+  socialAuthenticate,
+  verify2FA
 };

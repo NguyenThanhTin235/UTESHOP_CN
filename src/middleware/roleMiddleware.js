@@ -17,7 +17,7 @@ const isAdmin = (req, res, next) => {
  * Middleware để kiểm tra quyền Vendor
  */
 const isVendor = (req, res, next) => {
-  if (req.user && (req.user.role === 'vendor' || req.user.role === 'admin')) {
+  if (req.user && (req.user.role === 'vendor' || req.user.role === 'seller' || req.user.role === 'admin')) {
     return next();
   }
   return response.error(res, {

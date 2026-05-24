@@ -10,7 +10,7 @@ const paymentOrderSchema = new mongoose.Schema({
      shipping_amount: { type: Number, default: 0 },
      final_amount: { type: Number, required: true },
      payment_method: { type: String, enum: ['vnpay', 'momo', 'cod'] },
-     payment_status: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
+     payment_status: { type: String, enum: ['pending', 'success', 'failed', 'refunded'], default: 'pending' },
      transaction_id: { type: String }
 }, { timestamps: true });
 

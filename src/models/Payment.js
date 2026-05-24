@@ -5,7 +5,7 @@ const paymentSchema = new mongoose.Schema({
      payment_method: { type: String, enum: ['vnpay', 'momo', 'cod'], required: true },
      transaction_id: { type: String },
      amount: { type: Number, required: true },
-     status: { type: String, enum: ['success', 'failed', 'pending'], required: true },
+     status: { type: String, enum: ['success', 'failed', 'pending', 'refunded'], required: true },
      payment_date: { type: Date },
      response_data: { type: Object }
 }, { timestamps: true });

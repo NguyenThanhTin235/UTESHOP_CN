@@ -6,10 +6,12 @@ const { registrationRules, sendOTPRules, profileUpdateRules } = require('../midd
 const { upload } = require('../config/cloudinary');
 
 const { protect } = require('../middleware/authMiddleware');
+const { loginLimiter } = require('../middleware/rateLimiter');
 
 // Đăng ký
 router.post(
   '/register/send-otp', 
+  loginLimiter,
   sendOTPRules(), 
   validate, 
   authController.sendOTP
@@ -17,17 +19,19 @@ router.post(
 
 router.post(
   '/register', 
+  loginLimiter,
   registrationRules(), 
   validate, 
   authController.register
 );
 
 // Login
-router.post('/login', authController.login);
+router.post('/login', loginLimiter, authController.login);
+router.post('/verify-2fa', loginLimiter, authController.verify2FA);
 
 // Quên mật khẩu
-router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
+router.post('/forgot-password', loginLimiter, authController.forgotPassword);
+router.post('/reset-password', loginLimiter, authController.resetPassword);
 
 // Profile
 router.put('/profile', protect, profileUpdateRules(), validate, authController.updateProfile);

@@ -7,7 +7,7 @@ const orderSchema = new mongoose.Schema({
   shop_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'canceled', 'disputed', 'refunded'],
+    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'canceled', 'disputed', 'refunded', 'cancel_pending'],
     default: 'pending'
   },
   subtotal_amount: { type: Number, required: true },
@@ -19,7 +19,7 @@ const orderSchema = new mongoose.Schema({
   total_final: { type: Number, required: true },
   payment_status: {
     type: String,
-    enum: ['pending', 'success', 'failed'],
+    enum: ['pending', 'success', 'failed', 'refunded'],
     default: 'pending'
   },
   coin_earned: { type: Number, default: 0 }

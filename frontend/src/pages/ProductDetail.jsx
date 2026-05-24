@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import Header from '../components/Header';
@@ -9,8 +10,10 @@ import FABGroup from '../components/FABGroup';
 const ProductDetail = () => {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const { user } = useSelector((state) => state.auth);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isWishlisted, setIsWishlisted] = useState(false);
   
   // Interactions
   const [selectedImage, setSelectedImage] = useState('');
@@ -54,12 +57,35 @@ const ProductDetail = () => {
       const found = data.variants.find(v => v.attributes?.color === selectedColor && v.attributes?.size === selectedSize);
       if (found) {
         setSelectedVariant(found);
-        if (quantity > (found.stockQuantity || 0)) setQuantity(found.stockQuantity || 1);
+        if (quantity !== '' && quantity > (found.stockQuantity || 0)) setQuantity(found.stockQuantity || 1);
       } else {
         setSelectedVariant(null);
       }
     }
   }, [selectedColor, selectedSize, data, quantity]);
+
+  // Check if product is in user's wishlist
+  useEffect(() => {
+    const checkWishlist = async () => {
+      if (!user || !data?.product) return;
+      try {
+        const config = {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`,
+          },
+        };
+        const response = await axios.get('http://localhost:5000/api/users/wishlist', config);
+        if (response.data && response.data.success) {
+          const currentProductId = data.product._id || data.product.id;
+          const found = response.data.data.some(item => item.productId === currentProductId);
+          setIsWishlisted(found);
+        }
+      } catch (error) {
+        setIsWishlisted(false);
+      }
+    };
+    checkWishlist();
+  }, [user, data]);
 
   if (loading) {
     return <div className="min-h-screen bg-background text-on-background flex items-center justify-center font-['Manrope'] font-bold text-lg">Loading Academic Collection...</div>;
@@ -77,12 +103,135 @@ const ProductDetail = () => {
   const currentStock = selectedVariant ? selectedVariant.stockQuantity : stock;
 
   const handleQuantityChange = (type) => {
-    if (type === 'inc' && quantity < currentStock) setQuantity(q => q + 1);
-    if (type === 'dec' && quantity > 1) setQuantity(q => q - 1);
+    if (type === 'inc' && (quantity === '' || quantity < currentStock)) {
+      setQuantity(q => (q === '' ? 1 : Number(q) + 1));
+    }
+    if (type === 'dec' && quantity > 1) {
+      setQuantity(q => Number(q) - 1);
+    }
   };
 
-  const handleAddToCart = () => {
-    toast.success('Added to cart successfully!');
+  const handleDirectQuantityChange = (valStr) => {
+    const cleanVal = valStr.replace(/[^0-9]/g, '');
+    setQuantity(cleanVal === '' ? '' : Number(cleanVal));
+  };
+
+  const handleQuantityBlur = () => {
+    let targetQty = quantity;
+    if (targetQty === '' || targetQty < 1) {
+      targetQty = 1;
+    }
+    if (currentStock > 0 && targetQty > currentStock) {
+      toast.error(`Only ${currentStock} items left in stock`);
+      targetQty = currentStock;
+    }
+    setQuantity(targetQty);
+  };
+
+  const handleAddToCart = async () => {
+    if (!user) {
+      toast.error('Please log in to add products to your cart');
+      navigate('/login');
+      return;
+    }
+    let finalQty = Number(quantity);
+    if (isNaN(finalQty) || finalQty < 1) {
+      finalQty = 1;
+    }
+    if (currentStock > 0 && finalQty > currentStock) {
+      finalQty = currentStock;
+    }
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+      const response = await axios.post(
+        'http://localhost:5000/api/cart/add',
+        {
+          productId: product._id || product.id,
+          variantId: selectedVariant ? (selectedVariant._id || selectedVariant.id) : null,
+          quantity: finalQty
+        },
+        config
+      );
+      if (response.data && response.data.success) {
+        toast.success('Product added to cart successfully!');
+        window.dispatchEvent(new Event('cartUpdate'));
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add product to cart');
+    }
+  };
+
+  const handleBuyNow = async () => {
+    if (!user) {
+      toast.error('Please log in to make a purchase');
+      navigate('/login');
+      return;
+    }
+    let finalQty = Number(quantity);
+    if (isNaN(finalQty) || finalQty < 1) {
+      finalQty = 1;
+    }
+    if (currentStock > 0 && finalQty > currentStock) {
+      finalQty = currentStock;
+    }
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+      const response = await axios.post(
+        'http://localhost:5000/api/cart/add',
+        {
+          productId: product._id || product.id,
+          variantId: selectedVariant ? (selectedVariant._id || selectedVariant.id) : null,
+          quantity: finalQty
+        },
+        config
+      );
+      if (response.data && response.data.success) {
+        window.dispatchEvent(new Event('cartUpdate'));
+        navigate('/cart');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Error processing purchase');
+    }
+  };
+
+  const handleToggleWishlist = async () => {
+    if (!user) {
+      toast.error('Please log in to manage your wishlist');
+      return;
+    }
+    const currentProductId = product._id || product.id;
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`,
+        },
+      };
+      if (isWishlisted) {
+        const response = await axios.delete(`http://localhost:5000/api/users/wishlist/${currentProductId}`, config);
+        if (response.data && response.data.success) {
+          setIsWishlisted(false);
+          toast.success('Removed from wishlist');
+        }
+      } else {
+        const response = await axios.post('http://localhost:5000/api/users/wishlist', { productId: currentProductId }, config);
+        if (response.data && response.data.success) {
+          setIsWishlisted(true);
+          toast.success('Added to wishlist');
+        }
+      }
+    } catch (error) {
+      toast.error('Error updating wishlist');
+    }
   };
 
   return (
@@ -107,7 +256,7 @@ const ProductDetail = () => {
           <div className="lg:col-span-7 space-y-4">
             <div className="relative aspect-square bg-surface-container-lowest rounded-3xl overflow-hidden border border-outline-variant/30 group">
               <img src={selectedImage || product?.imageUrl || 'https://via.placeholder.com/600?text=No+Image+Available'} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 hover:scale-110 cursor-zoom-in" />
-              <div className="absolute top-6 left-6 flex flex-col gap-2">
+              <div className="absolute top-6 left-6 flex flex-col gap-2 z-10">
                 {currentStock > 0 ? (
                    <span className="bg-primary text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest">In Stock</span>
                 ) : (
@@ -115,17 +264,39 @@ const ProductDetail = () => {
                 )}
                 <span className="bg-[#131b2e] text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest">Authentic</span>
               </div>
-            </div>
-            <div className="grid grid-cols-4 gap-4">
-              {media?.length > 0 ? media.map((m, idx) => (
+              <div className="absolute top-6 right-6 z-10">
                 <button 
-                  key={idx} 
-                  onClick={() => setSelectedImage(m.mediaUrl)}
-                  className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all ${selectedImage === m.mediaUrl ? 'border-primary opacity-100 scale-105 shadow-md' : 'border-outline-variant opacity-60 hover:opacity-100 hover:border-primary'}`}
+                  onClick={handleToggleWishlist}
+                  className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-primary shadow-lg hover:bg-white hover:scale-110 transition-all cursor-pointer"
+                  title={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
                 >
-                  <img src={m.mediaUrl} className="w-full h-full object-cover" alt="" />
+                  <span className="material-symbols-outlined text-2xl text-primary" style={{ fontVariationSettings: isWishlisted ? "'FILL' 1" : "'FILL' 0" }}>favorite</span>
                 </button>
-              )) : null}
+              </div>
+            </div>
+            <div className="overflow-hidden relative w-full border border-outline-variant/30 rounded-3xl p-3 bg-white flex items-center">
+              <div className="animate-marquee flex">
+                {/* First set */}
+                {media?.length > 0 ? media.map((m, idx) => (
+                  <button 
+                    key={`set1-${idx}`} 
+                    onClick={() => setSelectedImage(m.mediaUrl)}
+                    className={`flex-shrink-0 w-24 h-24 mr-3 rounded-2xl overflow-hidden border-2 transition-all ${selectedImage === m.mediaUrl ? 'border-primary opacity-100 scale-105 shadow-md' : 'border-outline-variant opacity-60 hover:opacity-100 hover:border-primary'}`}
+                  >
+                    <img src={m.mediaUrl} className="w-full h-full object-cover" alt="" />
+                  </button>
+                )) : null}
+                {/* Duplicate set for seamless looping */}
+                {media?.length > 0 ? media.map((m, idx) => (
+                  <button 
+                    key={`set2-${idx}`} 
+                    onClick={() => setSelectedImage(m.mediaUrl)}
+                    className={`flex-shrink-0 w-24 h-24 mr-3 rounded-2xl overflow-hidden border-2 transition-all ${selectedImage === m.mediaUrl ? 'border-primary opacity-100 scale-105 shadow-md' : 'border-outline-variant opacity-60 hover:opacity-100 hover:border-primary'}`}
+                  >
+                    <img src={m.mediaUrl} className="w-full h-full object-cover" alt="" />
+                  </button>
+                )) : null}
+              </div>
             </div>
           </div>
 
@@ -134,7 +305,7 @@ const ProductDetail = () => {
             <div className="space-y-2">
               <p className="text-[12px] text-primary font-bold tracking-widest uppercase">{shop?.name || 'UTEShop Official Store'}</p>
               <h1 className="text-3xl font-extrabold text-on-surface leading-tight">{product.name}</h1>
-              <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1 text-secondary">
                   <span className="material-symbols-outlined text-[18px] text-amber-500" style={{fontVariationSettings: "'FILL' 1"}}>star</span>
                   <span className="font-bold">{product.averageRating || 'No ratings'}</span>
@@ -143,11 +314,6 @@ const ProductDetail = () => {
                 <span className="text-sm text-on-surface-variant underline cursor-pointer">{reviews?.length || 0} Reviews</span>
                 <span className="text-outline-variant">|</span>
                 <span className="text-sm text-on-surface-variant">{sold || 0} Sold</span>
-                <span className="text-outline-variant">|</span>
-                <div className="flex items-center gap-1 text-sm text-on-surface-variant" title="Total Views">
-                  <span className="material-symbols-outlined text-[16px] text-primary">visibility</span>
-                  <span>{product.viewCount || 0} Views</span>
-                </div>
               </div>
             </div>
 
@@ -247,7 +413,18 @@ const ProductDetail = () => {
                   <button onClick={() => handleQuantityChange('dec')} className="w-10 h-10 flex items-center justify-center hover:bg-surface-container-high rounded-lg transition-colors">
                     <span className="material-symbols-outlined">remove</span>
                   </button>
-                  <input type="text" value={quantity} readOnly className="w-12 text-center bg-transparent border-none focus:ring-0 font-bold" />
+                  <input 
+                    type="text" 
+                    value={quantity} 
+                    onChange={(e) => handleDirectQuantityChange(e.target.value)}
+                    onBlur={handleQuantityBlur}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.target.blur();
+                      }
+                    }}
+                    className="w-12 text-center bg-transparent border-none focus:ring-0 font-bold" 
+                  />
                   <button onClick={() => handleQuantityChange('inc')} className="w-10 h-10 flex items-center justify-center hover:bg-surface-container-high rounded-lg transition-colors">
                     <span className="material-symbols-outlined">add</span>
                   </button>
@@ -257,11 +434,11 @@ const ProductDetail = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4">
-              <button onClick={handleAddToCart} disabled={currentStock <= 0} className="flex items-center justify-center gap-2 border-2 border-primary text-primary py-4 rounded-2xl font-bold hover:bg-primary/5 transition-all disabled:opacity-50 active:scale-95">
+              <button onClick={handleAddToCart} disabled={currentStock <= 0} className="flex items-center justify-center gap-2 border-2 border-primary text-primary py-4 rounded-2xl font-bold hover:bg-primary/5 transition-all disabled:opacity-50 active:scale-95 cursor-pointer">
                 <span className="material-symbols-outlined">add_shopping_cart</span>
                 Add to Cart
               </button>
-              <button disabled={currentStock <= 0} className="bg-primary text-white py-4 rounded-2xl font-bold hover:bg-blue-800 transition-all shadow-xl shadow-primary/20 disabled:opacity-50 active:scale-95">
+              <button onClick={handleBuyNow} disabled={currentStock <= 0} className="bg-primary text-white py-4 rounded-2xl font-bold hover:bg-blue-800 transition-all shadow-xl shadow-primary/20 disabled:opacity-50 active:scale-95 cursor-pointer">
                 Buy It Now
               </button>
             </div>
@@ -472,7 +649,7 @@ const ProductDetail = () => {
                                   <div className="flex justify-between items-start">
                                       <div className="flex gap-4">
                                           {r.user?.avatarUrl && r.user.avatarUrl !== "https://ui-avatars.com/api/?name=User&background=random" ? (
-                                              <img src={r.user.avatarUrl} className="w-12 h-12 rounded-full border border-outline-variant object-cover" alt="Avatar" referrerPolicy="no-referrer" />
+                                              <img src={r.user.avatarUrl} className="w-12 h-12 rounded-full border border-outline-variant object-cover" alt="Avatar" />
                                           ) : (
                                               <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center font-bold text-primary">
                                                   {r.user?.fullName ? r.user.fullName.substring(0, 2).toUpperCase() : 'JD'}
@@ -582,7 +759,14 @@ const ProductDetail = () => {
                                 <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">{p.category?.name || 'Category'}</p>
                                 <h4 className="font-bold text-sm mb-2 line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors">{p.name}</h4>
                                 <div className="mt-auto flex items-center justify-between">
-                                    <p className="text-primary font-extrabold">{p.sellingPrice?.toLocaleString()}₫</p>
+                                    {p.mrpPrice > p.sellingPrice ? (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-primary font-extrabold">{p.sellingPrice?.toLocaleString()}₫</span>
+                                        <span className="text-xs text-[#505f76] line-through">{p.mrpPrice?.toLocaleString()}₫</span>
+                                      </div>
+                                    ) : (
+                                      <p className="text-primary font-extrabold">{p.sellingPrice?.toLocaleString()}₫</p>
+                                    )}
                                     <button className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center hover:bg-primary hover:text-white transition-all">
                                         <span className="material-symbols-outlined text-sm">add_shopping_cart</span>
                                     </button>

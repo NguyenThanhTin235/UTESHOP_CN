@@ -17,6 +17,17 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const upload = multer({ storage: storage });
+const productStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'uteshop/products',
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+    transformation: [{ width: 1000, height: 1000, crop: 'limit' }],
+  },
+});
 
-module.exports = { cloudinary, upload };
+const upload = multer({ storage: storage });
+const uploadProduct = multer({ storage: productStorage });
+
+module.exports = { cloudinary, upload, uploadProduct };
+

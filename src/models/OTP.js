@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const otpSchema = new mongoose.Schema({
   email: { type: String, required: true },
   otp_code: { type: String, required: true },
-  otp_type: { type: String, enum: ['register', 'login', 'reset_password'], required: true },
+  otp_type: { type: String, enum: ['register', 'login', 'reset_password', '2fa'], required: true },
   expired_at: { type: Date, required: true },
   is_verified: { type: Boolean, default: false }
 }, { timestamps: true });

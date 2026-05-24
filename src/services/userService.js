@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Address = require('../models/Address');
 
 class UserService {
   /**
@@ -29,6 +30,30 @@ class UserService {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
+
+    // Gửi email cảnh báo thay đổi mật khẩu (nếu bật tùy chọn)
+    if (user.security_alerts?.password_changes !== false) {
+      const sendEmail = require('../utils/mail');
+      const { getAlertTemplate } = require('../utils/emailTemplates');
+      const message = `Hello ${user.full_name},\n\nYour UTEShop account password was successfully changed. If you did not request this change, please secure your account immediately.\n\nBest regards,\nUTEShop Support Team`;
+      const html = getAlertTemplate(
+        'Password Changed Successfully',
+        `Hello ${user.full_name}, the password for your UTEShop account was successfully updated.`,
+        [
+          { label: 'Date/Time', value: new Date().toLocaleString('en-US') },
+          { label: 'Status', value: 'Completed Successfully' }
+        ],
+        'green',
+        false
+      );
+
+      sendEmail({
+        email: user.email,
+        subject: '[UTEShop] Security Alert: Password Changed Successfully',
+        message,
+        html
+      }).catch(err => console.error('Failed to send password change alert email:', err));
+    }
 
     return true;
   }
@@ -64,41 +89,44 @@ class UserService {
   }
 
   /**
+   * Lấy danh sách địa chỉ
+   */
+  async getAddresses(userId) {
+    const addresses = await Address.find({ user_id: userId }).sort({ is_default: -1, createdAt: -1 });
+    return addresses;
+  }
+
+  /**
    * Thêm địa chỉ mới
    */
   async addAddress(userId, addressData) {
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-
     // Nếu là địa chỉ đầu tiên, tự động đặt làm mặc định
-    if (user.addresses.length === 0) {
+    const count = await Address.countDocuments({ user_id: userId });
+    if (count === 0) {
       addressData.is_default = true;
     } else if (addressData.is_default) {
       // Nếu đặt địa chỉ mới làm mặc định, bỏ mặc định các địa chỉ cũ
-      user.addresses.forEach(addr => addr.is_default = false);
+      await Address.updateMany({ user_id: userId }, { is_default: false });
     }
 
-    user.addresses.push(addressData);
-    await user.save();
-    return user.addresses[user.addresses.length - 1];
+    addressData.user_id = userId;
+    const newAddress = await Address.create(addressData);
+    return newAddress;
   }
 
   /**
    * Cập nhật địa chỉ
    */
   async updateAddress(userId, addressId, updateData) {
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-
-    const address = user.addresses.id(addressId);
+    const address = await Address.findOne({ _id: addressId, user_id: userId });
     if (!address) throw new Error('Address not found');
 
     if (updateData.is_default && !address.is_default) {
-      user.addresses.forEach(addr => addr.is_default = false);
+      await Address.updateMany({ user_id: userId }, { is_default: false });
     }
 
     Object.assign(address, updateData);
-    await user.save();
+    await address.save();
     return address;
   }
 
@@ -106,22 +134,70 @@ class UserService {
    * Xóa địa chỉ
    */
   async removeAddress(userId, addressId) {
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-
-    const address = user.addresses.id(addressId);
+    const address = await Address.findOne({ _id: addressId, user_id: userId });
     if (!address) throw new Error('Address not found');
 
     const wasDefault = address.is_default;
-    user.addresses.pull(addressId);
+    await Address.findByIdAndDelete(addressId);
 
     // Nếu xóa địa chỉ mặc định, đặt địa chỉ đầu tiên còn lại làm mặc định
-    if (wasDefault && user.addresses.length > 0) {
-      user.addresses[0].is_default = true;
+    if (wasDefault) {
+      const firstAddress = await Address.findOne({ user_id: userId }).sort({ createdAt: 1 });
+      if (firstAddress) {
+        firstAddress.is_default = true;
+        await firstAddress.save();
+      }
     }
 
+    const addresses = await Address.find({ user_id: userId }).sort({ is_default: -1, createdAt: -1 });
+    return addresses;
+  }
+
+  /**
+   * Lấy cài đặt bảo mật
+   */
+  async getSecuritySettings(userId) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    return {
+      twoFactorEnabled: user.two_factor_enabled || false,
+      securityAlerts: {
+        loginAlerts: user.security_alerts?.login_alerts ?? true,
+        passwordChanges: user.security_alerts?.password_changes ?? true
+      }
+    };
+  }
+
+  /**
+   * Cập nhật cài đặt bảo mật
+   */
+  async updateSecuritySettings(userId, settings) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    
+    if (settings.twoFactorEnabled !== undefined) {
+      user.two_factor_enabled = settings.twoFactorEnabled;
+    }
+    if (settings.securityAlerts) {
+      if (!user.security_alerts) {
+        user.security_alerts = {};
+      }
+      if (settings.securityAlerts.loginAlerts !== undefined) {
+        user.security_alerts.login_alerts = settings.securityAlerts.loginAlerts;
+      }
+      if (settings.securityAlerts.passwordChanges !== undefined) {
+        user.security_alerts.password_changes = settings.securityAlerts.passwordChanges;
+      }
+    }
+    
     await user.save();
-    return user.addresses;
+    return {
+      twoFactorEnabled: user.two_factor_enabled,
+      securityAlerts: {
+        loginAlerts: user.security_alerts.login_alerts,
+        passwordChanges: user.security_alerts.password_changes
+      }
+    };
   }
 }
 
